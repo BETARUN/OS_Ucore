@@ -449,6 +449,33 @@ for (; ph < eph; ph ++) {
 
 ### 练习 5：实现函数调用堆栈跟踪函数
 
+阅读`print_stackframe`函数内的注释说明得到该函数的运行过程
+
+1. 调用`read_ebp`函数和`read_eip`函数获取当前`ebp`和`eip`的值
+2. 输出`ebp`和`eip`的值
+3. 根据`ebp`的偏移输出当前函数的4个参数
+4. 调用`print_debuginfo`函数解析调试信息得到该函数的函数名以及在源代码中的位置等信息
+5. 设置`ebp`和`eip`寄存器为栈内保存的上一个函数的`ebp`和`eip`值回溯到上一个函数，重复2-5过程
+6. 由于在bootasm.S中设定了`ebp`的初始值为0，当检查到`ebp`为0时结束
+
+函数体如下
+
+```c
+uint32_t ebp = read_ebp(), eip = read_eip();
+while (ebp != 0) {
+    cprintf("ebp:0x%08x eip:0x%08x args:", ebp, eip);
+    for (int i = 0; i < 4; ++i) {
+        cprintf("0x%08x ", ((uint32_t *)ebp)[i + 2]);
+    }
+    cprintf("\n");
+    print_debuginfo(eip - 1);
+    eip = ((uint32_t *)ebp)[1];
+    ebp = ((uint32_t *)ebp)[0];
+}
+```
+
+其中`ebp`和`eip`是整数类型，在打印输出和回溯时要转换成指针类型进行偏移和取地址内容操作
+
 ## 实验总结
 
 ## 参考文献
