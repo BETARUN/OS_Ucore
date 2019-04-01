@@ -1,4 +1,4 @@
-# 实验一：系统软件启动过程
+# 实验二：Ucore启动过程
 
 17343025 冯浚轩 软件工程
 
@@ -8,11 +8,12 @@
 
 ## 实验要求
 
-完成bootloader的编写
+- 完成bootloader的编写，引导操作系统启动
+- 完成操作系统中堆栈追踪函数的实现和中断的初始化
 
 ## 实验方案
 
-配置环境，根据实验内容要求做
+我使用的系统是WSL Ubuntu 18.04，使用`apt`命令安装gcc和qemu即可开始实验，其中qemu的启动程序为`qemu-system-i386`，由于我使用的是命令行环境需要加上`-nographic`参数才能启动
 
 在Makefile中有`qemu`和`debug`目标便于启动qemu和调试，现根据我的当前环境添加`my-qemu`和`my-debug`目标，如下
 
@@ -24,7 +25,7 @@ my-debug: $(UCOREIMG)
 	$(V)gdb -q -tui -x tools/gdbinit
 ```
 
-根据调试的需要修改gdbinit文件进行调试初始化
+在实验过程中可根据调试的需要修改gdbinit文件进行调试初始化
 
 ## 实验过程
 
