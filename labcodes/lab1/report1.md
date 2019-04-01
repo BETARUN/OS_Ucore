@@ -501,7 +501,96 @@ while (ebp != 0) {
 
 #### 完善对中断向量表进行初始化的函数`idt_init`
 
+阅读`idt_init`函数体内的注释说明可知，首先要声明中断向量表`vertors`：
 
+```c
+extern uintptr_t __vectors[];
+```
+
+然后使用`SETGATE`宏设置表项，在mmu.h文件内有使用说明
+
+```c
+/* *
+ * Set up a normal interrupt/trap gate descriptor
+ *   - istrap: 1 for a trap (= exception) gate, 0 for an interrupt gate
+ *   - sel: Code segment selector for interrupt/trap handler
+ *   - off: Offset in code segment for interrupt/trap handler
+ *   - dpl: Descriptor Privilege Level - the privilege level required
+ *          for software to invoke this interrupt/trap gate explicitly
+ *          using an int instruction.
+ * */
+#define SETGATE(gate, istrap, sel, off, dpl) {            \
+// ...
+```
+
+需要依次传入门描述符、门种类、代码段选择子、中断处理程序偏移量和特权级描述符
+
+- 在trap.c文件中定义了中断描述符表`idt`，通过索引可以找到表内某一描述符
+- 只有系统调用`T_SYSCALL`使用陷阱门，其它中断均使用中断门
+- 在memlayout.h文件中定义了代码段选择子`GD_KTEXT`
+- 中断处理程序偏移量为`vectors`起始在代码段中的偏移量加上该程序相对`vectors`起始的偏移量
+- 特权级描述符在memlayout.h文件中定义，只有系统调用`T_SYSCALL`使用用户态权限`DPL_USER`，其它中断均使用内核态权限`DPL_KERNEL`
+
+我们可以暂时假定所有表项都使用中断门，特权级为内核态权限，那么可以使用一个循环完成所有表项的设定
+
+```c
+for (int i = 0; i < 256; ++i) {
+    SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+}
+```
+
+接下来再对系统调用`T_SYSCALL`进行特殊处理，在trap.h中对其有定义
+
+```c
+#define T_SYSCALL               0x80 // SYSCALL, ONLY FOR THIS PROJ
+```
+
+在循环后对其进行设定
+
+```c
+SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+```
+
+最后将idt载入idtr寄存器，trap.c文件中定义的`idt_pd`描述了idtr寄存器的内容，使用x86.文件中定义的`lidt`函数将其载入idtr寄存器
+
+```c
+lidt(&idt_pd);
+```
+
+至此`idt_init`函数的实现完成
+
+#### 完善trap.c中的中断处理函数`trap`
+
+每遇到一次时钟中断将全局变量`ticks`加1，当`ticks`为`TICK_NUM`时调用`print_ticks`函数输出消息，再重置`ticks`为0
+
+实现如下
+
+```c
+case IRQ_OFFSET + IRQ_TIMER:
+    /* LAB1 YOUR CODE : STEP 3 */
+    /* handle the timer interrupt */
+    /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
+        * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
+        * (3) Too Simple? Yes, I think so!
+        */
+    ticks++;
+    if (ticks == TICK_NUM) {
+        ticks = 0;
+        print_ticks();
+    }
+    break;
+```
+
+操作系统输出结果
+
+```text
+++ setup timer interrupts
+100 ticks
+100 ticks
+100 ticks
+100 ticks
+// ...
+```
 
 ## 实验总结
 
