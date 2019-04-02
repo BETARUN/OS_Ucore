@@ -27,9 +27,9 @@
 
 ## 实验方案
 
-按照文档的需求和练习的要求了解项目的结构和流程，编程实现功能
+从GitHub[克隆](https://github.com/chyyuu/ucore_os_lab)项目，按照文档的需求和练习的要求了解项目的结构和流程，编程实现功能
 
-为了方便和轻量我直接使用WSL Ubuntu 18.04，使用`apt`命令安装gcc和qemu即可开始实验，其中qemu的启动程序为`qemu-system-i386`，由于我使用的是命令行环境需要加上`-nographic`参数才能启动
+为了方便和轻量我直接使用WSL Ubuntu 18.04，使用`apt`命令安装gcc和qemu，其中gcc的版本为7.3.0，qemu的版本为2.11.1，qemu的启动程序为`qemu-system-i386`，由于我使用的是命令行环境需要加上`-nographic`参数才能启动
 
 在Makefile中有`qemu`和`debug`目标便于启动qemu和调试，现根据我的当前环境添加`my-qemu`和`my-debug`目标，如下
 
