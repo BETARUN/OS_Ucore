@@ -230,7 +230,7 @@ TARGETS: $(TARGETS)
 
 QEMUOPTS = -hda $(UCOREIMG)
 
-.PHONY: qemu qemu-nox debug debug-nox
+.PHONY: qemu qemu-nox debug debug-nox my-qemu my-debug
 qemu-mon: $(UCOREIMG)
 	$(V)$(QEMU)  -no-reboot -monitor stdio $(QEMUOPTS) -serial null
 qemu: $(UCOREIMG)
@@ -250,6 +250,12 @@ debug-nox: $(UCOREIMG)
 	$(V)$(QEMU) -S -s -serial mon:stdio $(QEMUOPTS) -nographic &
 	$(V)sleep 2
 	$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
+
+my-qemu: $(UCOREIMG)
+	$(V)$(QEMU) -S -s -nographic -no-reboot -hda $<
+
+my-debug: $(UCOREIMG)
+	$(V)gdb -q -tui -x tools/gdbinit
 
 .PHONY: grade touch
 
