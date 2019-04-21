@@ -255,7 +255,7 @@ my-qemu: $(UCOREIMG)
 	$(V)$(QEMU) -S -s -nographic -no-reboot -hda $<
 
 my-debug: $(UCOREIMG)
-	$(V)gdb -q -tui -x tools/gdbinit
+	$(V)gdb -q -x tools/gdbinit
 
 .PHONY: grade touch
 
