@@ -362,20 +362,27 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     pde_t *pde = pgdir + PDX(la);
     // have page table
     if (*pde & PTE_P) {
-
+        uintptr_t ptAddr = PDE_ADDR(*pde);
+        pte_t *pteAddr = KADDR(ptAddr);
+        return pteAddr + PTX(la);
+        // uintptr_t pteAddr = ptAddr + PTX(la);
+        // return KADDR(pteAddr);
     }
     // don't have page table
     else {
         if (create) {
             struct Page *page = alloc_page();
-            if (pt == NULL)
+            if (page == NULL)
                 return NULL;
             else {
-                *pde &= PTE_USER;
                 set_page_ref(page, 1);
-                uintptr_t pt = page2pa(page);
-                memset((void *)pt, 0, PAGESIZE);
-                pte_t *pte = pde + PTX(la);
+                uintptr_t ptAddr = page2pa(page);
+                memset(KADDR(ptAddr), 0, PGSIZE);
+                *pde = PDE_ADDR(ptAddr) | PTE_USER;
+                pte_t *pteAddr = KADDR(ptAddr);
+                return pteAddr + PTX(la);
+                // uintptr_t pteAddr = ptAddr + PTX(la);
+                // return KADDR(pteAddr);
             }
         }
         else
