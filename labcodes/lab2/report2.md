@@ -20,7 +20,7 @@
 
 ## 实验方案
 
-将LAB1中完成的代码填入LAB2中的对应部分，然后完成相应练习
+将LAB1中完成的代码填入LAB2中的对应部分，在之前的实验中添加的辅助Makefile目标也要合并到当前的Makefile中，然后完成相应练习
 
 ## 实验过程
 
@@ -458,11 +458,79 @@ if (*ptep & PTE_P) {
 
 ---
 
-回答问题：
+再编译运行操作系统，现在会显示如下内容
 
-## 实验总结
+```text
+memory management: default_pmm_manager
+e820map:
+  memory: 0009fc00, [00000000, 0009fbff], type = 1.
+  memory: 00000400, [0009fc00, 0009ffff], type = 2.
+  memory: 00010000, [000f0000, 000fffff], type = 2.
+  memory: 07ee0000, [00100000, 07fdffff], type = 1.
+  memory: 00020000, [07fe0000, 07ffffff], type = 2.
+  memory: 00040000, [fffc0000, ffffffff], type = 2.
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+-------------------- BEGIN --------------------
+PDE(0e0) c0000000-f8000000 38000000 urw
+  |-- PTE(38000) c0000000-f8000000 38000000 -rw
+PDE(001) fac00000-fb000000 00400000 -rw
+  |-- PTE(000e0) faf00000-fafe0000 000e0000 urw
+  |-- PTE(00001) fafeb000-fafec000 00001000 -rw
+--------------------- END ---------------------
+++ setup timer interrupts
+100 ticks
+100 ticks
+100 ticks
+```
 
-看实验报告要求
+可见在练习1的输出基础上新增加了页表检查通过的字样，并且输出了当前页表的结构，接着内核保持响应时钟中断的状态，这说明这个实验成功了
+
+## 实验总结和对比
+
+### 对比答案说明差异
+
+主要的差别部分在于`default_free_pages()`函数，我的实现是首先检查头尾再定位到中间部分，定位完毕后再检查是否可以合并，再来看答案的实现
+
+```c
+list_entry_t *le = list_next(&free_list);
+while (le != &free_list) {
+    p = le2page(le, page_link);
+    le = list_next(le);
+    // TODO: optimize
+    if (base + base->property == p) {
+        base->property += p->property;
+        ClearPageProperty(p);
+        list_del(&(p->page_link));
+    }
+    else if (p + p->property == base) {
+        p->property += base->property;
+        ClearPageProperty(base);
+        base = p;
+        list_del(&(p->page_link));
+    }
+}
+nr_free += n;
+le = list_next(&free_list);
+while (le != &free_list) {
+    p = le2page(le, page_link);
+    if (base + base->property <= p) {
+        assert(base + base->property != p);
+        break;
+    }
+    le = list_next(le);
+}
+list_add_before(le, &(base->page_link));
+```
+
+大体上是先遍历链表找到可合并邻接块，再删除链表中的特定一个元素，注意其中的`base`变量在左合并后要赋值为左空闲块起始地址，后面再通过`base`变量定位到插入位置，往链表中插入对应元素
+
+对比两种实现，我觉得我的实现条理更加清晰，答案的代码逻辑在理解上要更困难点，我的实现在时间效率上会更好，因为只需要遍历一次链表而答案需要两次，缺点就是代码量看起来会比答案的长不少
+
+至于另外两个练习的实现是细节上的差异，在思路上是一致的，此处省略
+
+## 总结
 
 ## 参考文献
 
