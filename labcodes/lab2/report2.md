@@ -322,6 +322,93 @@ check_alloc_page() succeeded!
 
 ### 练习2：实现寻找虚拟地址对应的页表项
 
+在该操作系统中虚地址跟线性地址不区分，在mmu.h文件中有线性地址的结构示意图
+
+```text
+// A linear address 'la' has a three-part structure as follows:
+//
+// +--------10------+-------10-------+---------12----------+
+// | Page Directory |   Page Table   | Offset within Page  |
+// |      Index     |     Index      |                     |
+// +----------------+----------------+---------------------+
+//  \--- PDX(la) --/ \--- PTX(la) --/ \---- PGOFF(la) ----/
+//  \----------- PPN(la) -----------/
+```
+
+其中高10位为一级页表索引，次高10位为二级页表索引，低12位为页内偏移，对应4KB的页大小
+
+再查看指导书得到页表项的具体说明
+
+    页目录项内容 = (页表起始物理地址 & ~0x0FFF) | PTE_U | PTE_W | PTE_P
+    页表项内容 = (pa & ~0x0FFF) | PTE_P | PTE_W
+
+该处的页目录即为一级页表，页表即为二级页表，其中的PTE相关项是页表项的`flags`位，在mmu.h文件中有具体定义
+
+在memlayout.h文件中定义了两个与页表相关的类型
+
+```c
+typedef uintptr_t pte_t;
+typedef uintptr_t pde_t;
+```
+
+本质上是一样的东西，不过为了在源代码中更好区分一级页表和二级页表才做出如上定义
+
+---
+
+操作系统调用`get_pte()`函数获取一个线性地址对应的二级页表项的虚地址，需要传入以下参数
+
+- `pgdir`：一级页表的虚地址基址
+- `la`：源线性地址
+- `create`：指示是否为二级页表分配一个页
+
+首先需要索引到一级页表的相应项，借助`PDX()`宏函数在一级页表基址上加上一级页表索引
+
+```c
+pde_t *pde = pgdir + PDX(la);
+```
+
+定位到相应一级页表项后，检查`PTX_P`位是否是置位状态，若是则表明已有对应的二级页表
+
+```c
+// have page table
+if (*pde & PTE_P) {
+    uintptr_t ptAddr = PDE_ADDR(*pde);
+    pte_t *pteAddr = KADDR(ptAddr);
+    return pteAddr + PTX(la);
+}
+```
+
+使用`PDE_ADDR()`宏函数得到二级页表所在的物理地址，再使用`KADDR()`宏函数将物理地址转换为虚地址，由于`get_pte()`函数需要返回二级页表项的虚地址，再使用`PTX()`宏函数加上二级页表索引后返回即可
+
+若`PTX_P`位不置位，说明没有对应的二级页表，需要根据`create`的值决定是否分配二级页表
+
+```c
+// don't have page table
+else {
+    if (create) {
+        struct Page *page = alloc_page();
+        if (page == NULL)
+            return NULL;
+        else {
+            set_page_ref(page, 1);
+            uintptr_t ptAddr = page2pa(page);
+            memset(KADDR(ptAddr), 0, PGSIZE);
+            *pde = PDE_ADDR(ptAddr) | PTE_USER;
+            pte_t *pteAddr = KADDR(ptAddr);
+            return pteAddr + PTX(la);
+        }
+    }
+    else
+        return NULL;
+}
+```
+
+若`create`为0直接返回`NULL`，否则使用`alloc_page()`函数分配一页作为二级页表，若成功分配，将该页的引用计数设置为1，使用`page2pa()`函数得到该页的起始物理地址，由于该二级页表开始没有数据，使用`memset()`函数进行清空
+
+同时由于成功分配了二级页表，在一级页表的对应项上也要更新，使用`PDE_ADDR()`宏函数计算得到一级页表项的地址部分，再位或`PTE_USER`加上状态码，然后赋值给对应项
+
+在这里额外的准备工作完成，以下的过程与原来存在二级页表时相同
+
 ### 练习3：释放某虚地址所在的页并取消对应二级页表项的映射
 
 ## 实验总结

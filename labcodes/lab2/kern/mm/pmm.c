@@ -365,8 +365,6 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
         uintptr_t ptAddr = PDE_ADDR(*pde);
         pte_t *pteAddr = KADDR(ptAddr);
         return pteAddr + PTX(la);
-        // uintptr_t pteAddr = ptAddr + PTX(la);
-        // return KADDR(pteAddr);
     }
     // don't have page table
     else {
@@ -381,8 +379,6 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
                 *pde = PDE_ADDR(ptAddr) | PTE_USER;
                 pte_t *pteAddr = KADDR(ptAddr);
                 return pteAddr + PTX(la);
-                // uintptr_t pteAddr = ptAddr + PTX(la);
-                // return KADDR(pteAddr);
             }
         }
         else
