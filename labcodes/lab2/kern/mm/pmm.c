@@ -359,6 +359,28 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+    pde_t *pde = pgdir + PDX(la);
+    // have page table
+    if (*pde & PTE_P) {
+
+    }
+    // don't have page table
+    else {
+        if (create) {
+            struct Page *page = alloc_page();
+            if (pt == NULL)
+                return NULL;
+            else {
+                *pde &= PTE_USER;
+                set_page_ref(page, 1);
+                uintptr_t pt = page2pa(page);
+                memset((void *)pt, 0, PAGESIZE);
+                pte_t *pte = pde + PTX(la);
+            }
+        }
+        else
+            return NULL;
+    }
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
