@@ -191,7 +191,7 @@ if (vma->vm_flags & VM_WRITE) {
 addr = ROUNDDOWN(addr, PGSIZE);
 ```
 
-然后调用`get_pte()`函数获取`addr`线性地址对应的二级页表项，若页表项全为0表示该线性地址与物理地址尚未建立映射或者已经撤销，需要调用`pgdir_alloc_page()`函数申请一块物理页并建立其与页表的映射
+然后调用`get_pte()`函数获取`addr`线性地址对应的二级页表项，若页表项全为0表示该线性地址与物理地址尚未建立映射或者已经撤销，需要调用`pgdir_alloc_page()`函数申请一块物理页并建立其与页表的映射，这两个函数都涉及调用`alloc_pages()`函数申请新页，若当前没有可分配的物理页会触发页换出
 
 ```c
 ptep = get_pte(mm->pgdir, addr, 1);
@@ -200,7 +200,7 @@ if (*ptep == 0) {
 }
 ```
 
-若页表项不全为0表示相应的物理页在硬盘上，首先检查硬盘换页机制是否能工作，若不能工作则处理失败，否则继续处理，调用`swap_in()`函数将硬盘上的物理页调入内存，函数结束后`page`变量获得调入内存页的页描述符地址，再建立该物理页与页表的映射关系，最后设置该页为可交换页
+若页表项不全为0表示相应的物理页在硬盘上，首先检查硬盘换页机制是否能工作，若不能工作则处理失败，否则继续处理，调用`swap_in()`函数将硬盘上的物理页调入内存，函数结束后`page`变量获得调入内存页的页描述符地址，再建立该物理页与页表的映射关系，最后设置该页为可交换页，并且要将该页的`pra_vaddr`变量赋值为传入的线性地址`addr`
 
 ```c
 else {
@@ -209,6 +209,7 @@ else {
         swap_in(mm, addr, &page);
         page_insert(mm->pgdir, page, addr, perm);
         swap_map_swappable(mm, addr, page, 1);
+        page->pra_vaddr = addr;
     }
     else {
         cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
@@ -217,20 +218,7 @@ else {
 }
 ```
 
-编译运行，在输出结果中有以下一段，在测试程序中引发了一次缺页异常，正确处理后测试通过
-
-```text
--------------------- BEGIN --------------------
-PDE(0e0) c0000000-f8000000 38000000 urw
-  |-- PTE(38000) c0000000-f8000000 38000000 -rw
-PDE(001) fac00000-fb000000 00400000 -rw
-  |-- PTE(000e0) faf00000-fafe0000 000e0000 urw
-  |-- PTE(00001) fafeb000-fafec000 00001000 -rw
---------------------- END ---------------------
-check_vma_struct() succeeded!
-page fault at 0x00000100: K/W [no page found].
-check_pgfault() succeeded!
-```
+至此缺页异常的处理例程实现完成，要注意在这里实现的只是一个较为高层次的过程处理，涉及页替换的部分直接调用提供的函数接口，至于页替换算法的实现在下一个练习中实现
 
 ---
 
@@ -243,6 +231,77 @@ check_pgfault() succeeded!
 硬件会产生异常，将控制权转移到另一个相应的缺页服务例程进行处理，处理完毕后再返回当前的缺页服务例程继续处理，不过这样的调用可能会无限进行下去造成系统崩溃
 
 ### 练习2：补充完成基于FIFO的页面替换算法
+
+由swap_fifo.c文件中的注释可知需要补充完整`_fifo_map_swappable()`函数和`_fifo_swap_out_victim()`函数
+
+首先是`_fifo_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)`函数，用于将新申请页或调入页添加到FIFO页替换算法的队尾，使用传入的`*mm`参数得到替换队列的占位头节点，再使用传入的`*page`参数得到要加入队尾的节点，将其插入到双向链表中头节点之前，也就是插入到了队尾
+
+```c
+list_entry_t *head=(list_entry_t*) mm->sm_priv;
+list_entry_t *entry=&(page->pra_page_link);
+assert(entry != NULL && head != NULL);
+list_add_before(head, entry); // added
+return 0;
+```
+
+然后是`_fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)`函数，用于确定换出的页，使用传入的`*mm`参数得到替换队列的占位头节点，其后一个节点代表要被换出的页，将其从链表中删去，并找到对应的页描述符`Page`结构体的地址返回到`**ptr_page`指向的内存
+
+```c
+list_entry_t *head=(list_entry_t*) mm->sm_priv;
+    assert(head != NULL);
+assert(in_tick==0);
+// added below
+list_entry_t *del = head->next;
+list_del(del);
+struct Page *page = le2page(del, pra_page_link);
+*ptr_page = page;
+return 0;
+```
+
+编译运行，可以得到以下结果
+
+```text
+check_vma_struct() succeeded!
+page fault at 0x00000100: K/W [no page found].
+check_pgfault() succeeded!
+check_vmm() succeeded.
+ide 0:      10000(sectors), 'QEMU HARDDISK'.
+ide 1:     262144(sectors), 'QEMU HARDDISK'.
+SWAP: manager = fifo swap manager
+BEGIN check_swap: count 1, total 31964
+setup Page Table for vaddr 0X1000, so alloc a page
+setup Page Table vaddr 0~4MB OVER!
+set up init env for check_swap begin!
+page fault at 0x00001000: K/W [no page found].
+page fault at 0x00002000: K/W [no page found].
+page fault at 0x00003000: K/W [no page found].
+page fault at 0x00004000: K/W [no page found].
+set up init env for check_swap over!
+write Virt Page c in fifo_check_swap
+write Virt Page a in fifo_check_swap
+write Virt Page d in fifo_check_swap
+write Virt Page b in fifo_check_swap
+write Virt Page e in fifo_check_swap
+
+// ...
+
+page fault at 0x00001000: K/R [no page found].
+swap_out: i 0, store page in vaddr 0x2000 to disk swap entry 3
+swap_in: load disk swap entry 2 with swap_page in vadr 0x1000
+count is 0, total is 7
+check_swap() succeeded!
+++ setup timer interrupts
+serial [013]
+100 ticks
+100 ticks
+100 ticks
+```
+
+首先系统检查虚拟内存管理的数据结构是否正常，检查通过后再检查缺页异常的处理是否正常，练习1正确完成后该部分能通过检查，这一步后虚拟内存管理能通过检查，之后再检查页替换算法是否正常，中间输出了检查过程中的换入换出等信息，练习2正确完成后该部分能通过检查，表示该实验正确完成
+
+---
+
+
 
 ## 实验总结和对比
 
