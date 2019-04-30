@@ -16,7 +16,17 @@
 
 ## 实验方案
 
-填写已有实验，完成本实验中的相应练习
+在本实验中使用另一个硬盘镜像作为交换分区，在Makefile中要相应做出修改
+
+```makefile
+my-qemu: $(UCOREIMG) $(SWAPIMG)
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
+
+my-debug: $(UCOREIMG) $(SWAPIMG)
+	$(V)gdb -q -x tools/gdbinit
+```
+
+接着填写已有实验，并完成练习
 
 ## 实验过程
 
@@ -56,7 +66,70 @@ struct vma_struct {
 
 ![struct map](vmm_struct.png)
 
-### 给未被映射的地址映射上物理页
+---
+
+在实验练习中需要实现FIFO页替换算法，为了将已调入的页组织成队列，扩展物理页描述符`Page`结构体，其中`pra_page_link`用于构造队列链表，`pra_vaddr`表示此物理页对应的虚拟页的地址
+
+```c
+struct Page {
+    list_entry_t pra_page_link;     // used for pra (page replace algorithm)
+    uintptr_t pra_vaddr;            // used for pra (page replace algorithm)
+};
+```
+
+在swap.h文件中描述了指向硬盘的页表项的定义，指向硬盘时高24位是扇区地址位，低8位是保留位用于实现特定功能
+
+```c
+/* *
+ * swap_entry_t
+ * --------------------------------------------
+ * |         offset        |   reserved   | 0 |
+ * --------------------------------------------
+ *           24 bits            7 bits    1 bit
+ * */
+```
+
+为了实现页替换算法，在swap.h文件中设计了一个管理器接口，主要由指向实现页替换功能的函数指针组成
+
+```c
+struct swap_manager
+{
+     const char *name;
+     /* Global initialization for the swap manager */
+     int (*init)            (void);
+     /* Initialize the priv data inside mm_struct */
+     int (*init_mm)         (struct mm_struct *mm);
+     /* Called when tick interrupt occured */
+     int (*tick_event)      (struct mm_struct *mm);
+     /* Called when map a swappable page into the mm_struct */
+     int (*map_swappable)   (struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in);
+     /* When a page is marked as shared, this routine is called to
+      * delete the addr entry from the swap manager */
+     int (*set_unswappable) (struct mm_struct *mm, uintptr_t addr);
+     /* Try to swap out a page, return then victim */
+     int (*swap_out_victim) (struct mm_struct *mm, struct Page **ptr_page, int in_tick);
+     /* check the page relpacement algorithm */
+     int (*check_swap)(void);
+};
+```
+
+在练习2中需要实现FIFO页替换算法，其使用到的管理器在swap_fifo.c文件中有定义
+
+```c
+struct swap_manager swap_manager_fifo =
+{
+     .name            = "fifo swap manager",
+     .init            = &_fifo_init,
+     .init_mm         = &_fifo_init_mm,
+     .tick_event      = &_fifo_tick_event,
+     .map_swappable   = &_fifo_map_swappable,
+     .set_unswappable = &_fifo_set_unswappable,
+     .swap_out_victim = &_fifo_swap_out_victim,
+     .check_swap      = &_fifo_check_swap,
+};
+```
+
+### 练习1：给未被映射的地址映射上物理页
 
 当CPU的访存操作无法正常访问到物理内存时就会产生Page Fault异常，经过异常中断后CPU控制权会转移到`do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr)`函数进行异常处理，对于传入的参数
 
@@ -163,23 +236,13 @@ check_pgfault() succeeded!
 
 #### 请描述页目录项（Page Directory Entry）和页表项（Page Table Entry）中组成部分对ucore实现页替换算法的潜在用处
 
-在swap.h文件中描述了指向硬盘的页表项的定义
-
-```c
-/* *
- * swap_entry_t
- * --------------------------------------------
- * |         offset        |   reserved   | 0 |
- * --------------------------------------------
- *           24 bits            7 bits    1 bit
- * */
-```
-
-与页替换算法关联的主要是页表项，页表项指向物理内存位置时高20位是有效地址位，指向硬盘时高24位是扇区地址位，那么低8位就可以用来保存状态信息，其中最低位的存在位决定页表项指向的是物理内存还是硬盘，是必须的，而其它几位可以用来实现页替换算法，例如实现近似LRU算法需要的引用位和实现已修改再换出的脏位都可以用这些保留位来帮助实现
+页表项的低8位保存了页的状态信息，其中最低位的存在位决定页表项指向的是物理内存还是硬盘，是必须的，而其它几位可以用来实现页替换算法，例如实现近似LRU算法需要的引用位和实现已修改再换出的脏位都可以用这些保留位来帮助实现
 
 #### 如果ucore的缺页服务例程在执行过程中访问内存，出现了页访问异常，请问硬件要做哪些事情？
 
 硬件会产生异常，将控制权转移到另一个相应的缺页服务例程进行处理，处理完毕后再返回当前的缺页服务例程继续处理，不过这样的调用可能会无限进行下去造成系统崩溃
+
+### 练习2：补充完成基于FIFO的页面替换算法
 
 ## 实验总结和对比
 

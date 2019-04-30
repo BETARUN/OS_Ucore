@@ -245,10 +245,10 @@ debug-nox: $(UCOREIMG) $(SWAPIMG)
 	$(V)sleep 2
 	$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
 
-my-qemu: $(UCOREIMG)
-	$(V)$(QEMU) -S -s -nographic -no-reboot -hda $<
+my-qemu: $(UCOREIMG) $(SWAPIMG)
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
 
-my-debug: $(UCOREIMG)
+my-debug: $(UCOREIMG) $(SWAPIMG)
 	$(V)gdb -q -x tools/gdbinit
 
 .PHONY: grade touch
