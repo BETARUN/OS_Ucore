@@ -69,7 +69,7 @@ _fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick
      //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
      //(2)  assign the value of *ptr_page to the addr of this page
      list_entry_t *del = head->next;
-     assert(head != le);
+     assert(head != del);
      list_del(del);
      struct Page *page = le2page(del, pra_page_link);
      assert(page != NULL);
