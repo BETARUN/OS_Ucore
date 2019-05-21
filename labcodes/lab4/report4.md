@@ -130,7 +130,7 @@ alloc_proc(void) {
 }
 ```
 
-首先需要申请一块内存空间作为进程控制块，如果空间申请失败自然进程无法创建，若空间能够申请成功，需要对其成员进行初始化，其中进程状态为`PROC_UNINIT`表示未初始化，pid为-1表示也表示未初始化状态，cr3赋值为内核页目录的地址，其它的成员变量全部赋值为0，完成初始化后返回该进程控制块的指针
+首先需要申请一块内存空间作为进程控制块，如果空间申请失败自然进程无法创建，返回NULL，若空间能够申请成功，需要对其成员进行初始化，其中进程状态为`PROC_UNINIT`表示未初始化，pid为-1表示也表示未初始化状态，cr3赋值为内核页目录的地址，其它的成员变量全部赋值为0，完成初始化后返回该进程控制块的指针
 
 ---
 
@@ -139,6 +139,107 @@ alloc_proc(void) {
 两者都是在用于保存和恢复中断现场的，其中context是通用寄存器的状态，而tf指向的中断帧会记录该进程使用的其它寄存器比如段寄存器的状态，两者在进程切换和特权级切换过程中是不可或缺的
 
 ### 练习2：为新创建的内核线程分配资源
+
+`kernel_thread()`函数用于创建内核线程，该函数主要为新创建的线程建立中断栈，具体如下：
+
+```c
+int
+kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
+    struct trapframe tf;
+    memset(&tf, 0, sizeof(struct trapframe));
+    tf.tf_cs = KERNEL_CS;
+    tf.tf_ds = tf.tf_es = tf.tf_ss = KERNEL_DS;
+    tf.tf_regs.reg_ebx = (uint32_t)fn;
+    tf.tf_regs.reg_edx = (uint32_t)arg;
+    tf.tf_eip = (uint32_t)kernel_thread_entry;
+    return do_fork(clone_flags | CLONE_VM, 0, &tf);
+}
+```
+
+首先是段寄存器的设置，由于新建的是内核线程这些寄存器的设置是统一的常量，接下来设置线程的入口函数和参数，然后将eip寄存器设置为统一的`kernel_thread_entry`入口处，最后调用`do_fork()`函数完成具体的线程创建工作
+
+再看`kernel_thread_entry`入口，这里定义在entry.S文件中，里面只有很简单的内容，将函数参数指针压栈后调用线程入口函数，函数退出后调用`do_exit()`函数结束线程
+
+```x86asm
+kernel_thread_entry:        # void kernel_thread(void)
+
+    pushl %edx              # push arg
+    call *%ebx              # call fn
+
+    pushl %eax              # save the return value of fn(arg)
+    call do_exit            # call do_exit to terminate current thread
+```
+
+再看回重点的`do_fork()`函数，传入参数为控制`flags`、父线程的用户栈地址`stack`和`kernel_thread()`函数中设置的中断帧的指针，如果`stack`为0表示创建的是内核线程
+
+```c
+int
+do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
+    int ret = -E_NO_FREE_PROC;
+    struct proc_struct *proc;
+    if (nr_process >= MAX_PROCESS) {
+        goto fork_out;
+    }
+    ret = -E_NO_MEM;
+    // ...
+    proc= alloc_proc();
+    if (proc == NULL)
+        goto fork_out;
+    ret = setup_kstack(proc);
+    if (ret != 0)
+        goto bad_fork_cleanup_proc;
+    ret = copy_mm(clone_flags, proc);
+    if (ret != 0)
+        goto bad_fork_cleanup_kstack;
+    copy_thread(proc, stack, tf);
+    proc->pid = get_pid();
+    hash_proc(proc);
+    list_add(&proc_list, &proc->list_link);
+    nr_process++;
+    wakeup_proc(proc);
+    ret = proc->pid;
+
+fork_out:
+    return ret;
+
+bad_fork_cleanup_kstack:
+    put_kstack(proc);
+bad_fork_cleanup_proc:
+    kfree(proc);
+    goto fork_out;
+}
+```
+
+该函数首先检查现有线程是否大于或等于系统上限，若是则创建失败，返回`-E_NO_FREE_PROC`错误码，否则进行更进一步的线程创建过程
+
+接着调用`alloc_proc()`函数申请并初始化一块进程控制块，若返回值为NULL说明内存空间不足，返回`-E_NO_MEM`错误码，否则继续流程
+
+然后调用`setup_kstack()`函数为新创建的线程设置内核线程栈，查看该函数定义如下：
+
+```c
+// setup_kstack - alloc pages with size KSTACKPAGE as process kernel stack
+static int
+setup_kstack(struct proc_struct *proc) {
+    struct Page *page = alloc_pages(KSTACKPAGE);
+    if (page != NULL) {
+        proc->kstack = (uintptr_t)page2kva(page);
+        return 0;
+    }
+    return -E_NO_MEM;
+}
+```
+
+可以看到该函数申请一块内存空间作为内核栈，若成功则返回0，否则返回`-E_NO_MEM`错误码，再回到`do_fork()`函数，在调用`setup_kstack()`函数后我们检查其返回值，若不是0说明出错，跳转到`bad_fork_cleanup_proc`处释放进程控制块后退出函数，若是0则继续下面的流程
+
+然后再调用`copy_mm()`函数，其作用是根据`clone_flags`的值决定是复制还是共享父进程的内存管理块`mm`，同样是成功时返回0，检查返回值，若不是0说明出错，由于上面分配内核栈已成功，这次需要跳转到`bad_fork_cleanup_kstack`处进行更进一步的资源释放然后再退出函数，否则继续下面的流程
+
+这一步之后相关资源分配完成，调用`copy_thread()`函数设置新线程的中断帧、入口地址和栈，再调用`get_pid()`函数获取一个唯一的pid赋值到进程控制块的`pid`变量中，将该进程控制块加入链表和哈希表中，再把现存进程计数器加1，最后调用`wakeup_proc()`函数将新建的线程设置为`PROC_RUNNABLE`状态，该线程的创建工作完成可以运行了，`do_fork()`函数返回新建线程的pid即可
+
+---
+
+回答问题：**请说明ucore是否做到给每个新fork的线程一个唯一的id？**
+
+
 
 ### 练习3：阅读代码，理解 proc_run 函数和它调用的函数如何完成进程切换的
 
