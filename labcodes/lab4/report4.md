@@ -239,7 +239,7 @@ setup_kstack(struct proc_struct *proc) {
 
 回答问题：**请说明ucore是否做到给每个新fork的线程一个唯一的id？**
 
-
+这个问题涉及到`get_pid()`函数，仔细了解其运行原理可知，在分配pid时会遍历进程控制块列表来得到已被分配的pid，找到一个未被分配的pid返回
 
 ### 练习3：阅读代码，理解 proc_run 函数和它调用的函数如何完成进程切换的
 
