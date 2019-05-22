@@ -243,6 +243,39 @@ setup_kstack(struct proc_struct *proc) {
 
 ### 练习3：阅读代码，理解 proc_run 函数和它调用的函数如何完成进程切换的
 
+下面是`proc_run()`函数的实现：
+
+```c
+// proc_run - make process "proc" running on cpu
+// NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
+void
+proc_run(struct proc_struct *proc) {
+    if (proc != current) {
+        bool intr_flag;
+        struct proc_struct *prev = current, *next = proc;
+        local_intr_save(intr_flag);
+        {
+            current = proc;
+            load_esp0(next->kstack + KSTACKSIZE);
+            lcr3(next->cr3);
+            switch_to(&(prev->context), &(next->context));
+        }
+        local_intr_restore(intr_flag);
+    }
+}
+```
+
+该函数的作用是进行进程的切换，首先要判断将要运行的进程是否是当前进程，若是则不用切换，若不是则进行进程切换，首先调用`local_intr_save()`函数保存当前的中断状态标志，然后将当前进程控制块指针`current`赋值为将要运行的进程对应的进程控制块，接着调用`load_esp0()`函数加载新进程的内核栈地址到任务状态段中，然后调用`lcre()`函数将新进程的页目录基址加载到cr3页目录基址寄存器完成页表的切换，最后调用`switch_to()`函数切换进程的上下文，这些工作完成后再调用`local_intr_restore()`函数恢复中断状态标志
+
+---
+
+回答问题：
+
+- **在本实验的执行过程中，创建且运行了几个内核线程？**
+- **语句local_intr_save(intr_flag);....local_intr_restore(intr_flag);在这里有何作用?**
+
+
+
 ## 实验总结和对比
 
 ### 对比答案说明差异
