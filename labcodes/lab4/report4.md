@@ -274,21 +274,125 @@ proc_run(struct proc_struct *proc) {
 - **在本实验的执行过程中，创建且运行了几个内核线程？**
 - **语句local_intr_save(intr_flag);....local_intr_restore(intr_flag);在这里有何作用?**
 
+查看`proc_init()`函数可知实验中创建了`idleproc`线程和`initproc`线程
 
+在sync.h文件中可以找到`local_intr_save()`函数和`local_intr_restore()`函数的定义如下:
+
+```c
+static inline bool
+__intr_save(void) {
+    if (read_eflags() & FL_IF) {
+        intr_disable();
+        return 1;
+    }
+    return 0;
+}
+
+static inline void
+__intr_restore(bool flag) {
+    if (flag) {
+        intr_enable();
+    }
+}
+
+#define local_intr_save(x)      do { x = __intr_save(); } while (0)
+#define local_intr_restore(x)   __intr_restore(x);
+```
+
+再进一步查找得到：
+
+```c
+static inline uint32_t
+read_eflags(void) {
+    uint32_t eflags;
+    asm volatile ("pushfl; popl %0" : "=r" (eflags));
+    return eflags;
+}
+
+#define FL_IF           0x00000200  // Interrupt Flag
+
+/* intr_enable - enable irq interrupt */
+void
+intr_enable(void) {
+    sti();
+}
+
+/* intr_disable - disable irq interrupt */
+void
+intr_disable(void) {
+    cli();
+}
+```
+
+分析可知`local_intr_save()`函数和`local_intr_restore()`函数与处理器中断有关，在`local_intr_save()`函数内使用`read_eflags()`函数读取状态寄存器并跟`FL_IF`进行按位与判断处理器是否开中断，若开中断需要调用`intr_disable()`函数关中断，保证进程切换过程不被打断，在进程切换完毕后调用`local_intr_restore()`函数，若进程切换前开中断则调用`intr_enable()`函数开中断恢复先前的状态
+
+### 实验结果
+
+编译运行，可以得到下面结果
+
+```text
+++ setup timer interrupts
+this initproc, pid = 1, name = "init"
+To U: "Hello world!!".
+To U: "en.., Bye, Bye. :)"
+kernel panic at kern/process/proc.c:344:
+    process exit!!.
+```
+
+对比参考输出后可以认为实验成功
 
 ## 实验总结和对比
 
 ### 对比答案说明差异
 
+对比答案可以发现我的实现是不完整的，比如我忘了设置新建进程与父进程的关系
+
+```c
+proc->parent = current;
+```
+
+当前的实验并没有涉及到进程间的关系，在以后若出现这种需求就会出现问题
+
+然后就是答案在申请pid、将进程控制块组织成链表和哈希表以及增加进程计数时需要关中断
+
+```c
+bool intr_flag;
+local_intr_save(intr_flag);
+{
+    proc->pid = get_pid();
+    hash_proc(proc);
+    list_add(&proc_list, &(proc->list_link));
+    nr_process ++;
+}
+local_intr_restore(intr_flag);
+```
+
+我认为这种做法有一些道理，上面的操作必须保证原子性，通过关中断可以保证原子性，不过我暂时想不出上述语句被中断的情况
+
+最后将上述修改合并到我的实现中
 
 ### 本实验中重要的知识点
 
+- 进程控制块
+- 进程的创建过程
+- 进程间的切换
 
 ### OS原理中很重要但实验中没有对应的知识点
 
+- 进程的调度
+- 时间片结束抢占进程
+
+这些内容可能在下一个实验就有了吧
 
 ### 总结
 
+这次实验涉及了进程/线程的内容，首先是介绍了实现进程/线程管理的数据结构——进程控制块，接着在实验中我需要实现创建新进程/线程时对进程控制块的相关设置
+
+本次实验涉及到的内容其实比较多，从实验开始的中断、中断帧，到后面的内存结构、内存管理，再到新增的进程管理结构，在实验中需要对这些回忆起这些内容并对它们进行整合
+
+在这个实验中涉及到硬件相关的内容比较多，这一部分自我感觉是比较困难的，特别是中断相关的内容，在看到相关的内容我都还是要多查找资料学习，以对它们有比较清晰的了解
+
+当然了后面还有进程/线程相关的实验，这次实验作为前一部分，对后一部分的了解与实现自然会有很大的帮助，这次实验也让我对操作系统对进程/线程的管理细节有了更加深入的了解
 
 ## 参考文献
 

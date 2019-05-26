@@ -311,6 +311,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     proc = alloc_proc();
     if (proc == NULL)
         goto fork_out;
+    proc->parent = current;
     ret = setup_kstack(proc);
     if (ret != 0)
         goto bad_fork_cleanup_proc;
@@ -318,10 +319,15 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     if (ret != 0)
         goto bad_fork_cleanup_kstack;
     copy_thread(proc, stack, tf);
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
     proc->pid = get_pid();
     hash_proc(proc);
     list_add(&proc_list, &proc->list_link);
     nr_process++;
+    local_intr_restore(intr_flag);
+    
     wakeup_proc(proc);
     ret = proc->pid;
 
