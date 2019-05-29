@@ -226,6 +226,11 @@ default_free_pages(struct Page *base, size_t n) {
     }
 }
 
+static size_t
+default_nr_free_pages(void) {
+    return nr_free;
+}
+
 static void
 basic_check(void) {
     struct Page *p0, *p1, *p2;
