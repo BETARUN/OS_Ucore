@@ -114,6 +114,101 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
 
 ### 练习3：阅读分析源代码，理解进程执行 fork/exec/wait/exit 的实现，以及系统调用的实现
 
+#### 系统调用的实现
+
+通过软中断指令陷入到0x80号中断实现系统调用，在unistd.h文件中定义了不同系统调用功能对应的系统调用号，先前在`idt_init()`函数初始化中断时定义了系统调用的入口
+
+```c
+SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+```
+
+这让用户态的程序得以通过中断进入内核态，是系统调用的前提
+
+再查找中断解析函数得到系统调用的处理方法
+
+```c
+case T_SYSCALL:
+    syscall();
+    break;
+```
+
+在syscall.c文件中找到上面的函数对应的内容
+
+```c
+static int (*syscalls[])(uint32_t arg[]) = {
+    [SYS_exit]              sys_exit,
+    [SYS_fork]              sys_fork,
+    [SYS_wait]              sys_wait,
+    [SYS_exec]              sys_exec,
+    [SYS_yield]             sys_yield,
+    [SYS_kill]              sys_kill,
+    [SYS_getpid]            sys_getpid,
+    [SYS_putc]              sys_putc,
+    [SYS_pgdir]             sys_pgdir,
+};
+
+#define NUM_SYSCALLS        ((sizeof(syscalls)) / (sizeof(syscalls[0])))
+
+void
+syscall(void) {
+    struct trapframe *tf = current->tf;
+    uint32_t arg[5];
+    int num = tf->tf_regs.reg_eax;
+    if (num >= 0 && num < NUM_SYSCALLS) {
+        if (syscalls[num] != NULL) {
+            arg[0] = tf->tf_regs.reg_edx;
+            arg[1] = tf->tf_regs.reg_ecx;
+            arg[2] = tf->tf_regs.reg_ebx;
+            arg[3] = tf->tf_regs.reg_edi;
+            arg[4] = tf->tf_regs.reg_esi;
+            tf->tf_regs.reg_eax = syscalls[num](arg);
+            return ;
+        }
+    }
+    print_trapframe(tf);
+    panic("undefined syscall %d, pid = %d, name = %s.\n",
+            num, current->pid, current->name);
+}
+```
+
+`syscall()`函数读取中断帧中保存的寄存器值得到应用程序想要实现的调用，其中`eax`寄存器指定系统调用号，另外五个通用寄存器传递系统调用的参数，上面还维护了一个系统调用功能函数指针表，通过系统调用号索引该表，将相应系统调用功能的实现交由对应函数，函数的返回值保存在中断帧的`eax`寄存器随中断恢复返回给应用程序，至此系统调用实现完成
+
+#### fork的实现
+
+`syscall()`函数调用`sys_fork()`函数进行进程的复制
+
+```c
+static int
+sys_fork(uint32_t arg[]) {
+    struct trapframe *tf = current->tf;
+    uintptr_t stack = tf->tf_esp;
+    return do_fork(0, stack, tf);
+}
+```
+
+该函数主要是调用`do_fork()`函数完成进程复制，在上一个实验中已经详细讨论过这个函数，但是在这里会有一点修改
+
+首先是在申请进程控制块之后，此处需要让新进程的父进程指针指向其父进程，并且确保父进程的等待态为空
+
+```c
+proc->parent = current;
+if(current->wait_state != 0)
+    goto bad_fork_cleanup_proc;
+```
+
+然后将之前的把新进程控制块加入链表的函数替换为`set_links()`函数，该函数在之前的加入链表功能的基础上加入了设置各进程控制块之间关系指针的功能，以维护各进程的相互关系
+
+此外，上述修改都涉及到进程控制块中新添加的变量，需要修改`alloc_proc()`函数完成对它们的初始化
+
+```c
+proc->wait_state = 0;
+proc->cptr = proc->yptr = proc->optr = NULL;
+```
+
+至此`do_fork()`函数的实现完成，调用该函数后进程得到复制
+
+#### exec的实现
+
 
 
 ---
