@@ -421,7 +421,8 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     if (proc == NULL)
         goto fork_out;
     proc->parent = current;
-    current->wait_state = 0;
+    if(current->wait_state != 0)
+        goto bad_fork_cleanup_proc;
     ret = setup_kstack(proc);
     if (ret != 0)
         goto bad_fork_cleanup_proc;
