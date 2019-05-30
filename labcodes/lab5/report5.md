@@ -49,18 +49,68 @@ tf->tf_eflags = FL_IF;
 
 回答问题：**当创建一个用户态进程并加载了应用程序后，CPU是如何让这个应用程序最终在用户态执行起来的**
 
-查看`do_execve()`函数的调用链条如下：`SYS_exec`系统调用 -> `sys_exer()`函数 -> `do_execve()`函数
+查看`do_execve()`函数的调用链条如下：`SYS_exec`系统调用 --> `sys_exer()`函数 --> `do_execve()`函数
 
 `do_execve()`函数结束后，新的应用程序已经被加载，需要从系统调用返回，由于我们设置好了中断帧，在从系统调用返回后会从内核态切换到用户态，并在新的应用程序的入口处开始执行
 
 ### 练习2：父进程复制自己的内存空间给子进程
 
+`do_fork()`函数调用`copy_mm()` --> `dup_mmap()` --> `copy_range()`函数拷贝父进程的有效内存到子进程空间，在该练习中需要完成`copy_range()`函数，该函数如下：
 
+```c
+int
+copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
+    assert(start % PGSIZE == 0 && end % PGSIZE == 0);
+    assert(USER_ACCESS(start, end));
+    // copy content by page unit.
+    do {
+        //call get_pte to find process A's pte according to the addr start
+        pte_t *ptep = get_pte(from, start, 0), *nptep;
+        if (ptep == NULL) {
+            start = ROUNDDOWN(start + PTSIZE, PTSIZE);
+            continue ;
+        }
+        //call get_pte to find process B's pte according to the addr start. If pte is NULL, just alloc a PT
+        if (*ptep & PTE_P) {
+            if ((nptep = get_pte(to, start, 1)) == NULL) {
+                return -E_NO_MEM;
+            }
+        uint32_t perm = (*ptep & PTE_USER);
+        //get page from ptep
+        struct Page *page = pte2page(*ptep);
+        // alloc a page for process B
+        struct Page *npage=alloc_page();
+        assert(page!=NULL);
+        assert(npage!=NULL);
+        int ret=0;
+
+        void* src_kvaddr = page2kva(page);
+        void* dst_kvaddr = page2kva(npage);
+        memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+        ret = page_insert(to, npage, start, perm);
+        assert(ret == 0);
+        }
+        start += PGSIZE;
+    } while (start != 0 && start < end);
+    return 0;
+}
+```
+
+该函数传入两个进程的页目录基址、需要复制的一块内存的线性地址的起止点和状态码，以页大小为间隔遍历线性地址范围
+
+在每一步中，首先根据线性地址调用`get_pte()`函数取到父进程的页表项，这里不允许分配新空间，那么当返回`NULL`时表明当前页目录项没有对应页表，调整`start`到下一个页目录项对应的线性地址；再调用`get_pte()`函数找到子进程的页表项，此处再根据页表项找到两者对应的页管理块，在这里允许分配新空间让子进程的页表空间得以建立
+
+再由这两个页管理块调用`page2kva()`函数得到两个页起始的虚拟地址，调用`memcpy()`函数复制内容，最后再调用`page_insert()`函数将新分配的页插入到子进程的页表中
 
 ---
 
 回答问题：**如何设计实现“Copy on Write"机制”**
 
+首先操作系统需要得知某个进程要修改共享空间，这需要通过缺页中断实现，进一步，我们需要在fork新进程时把父进程和子进程的页表项全部置为只读，这样在任何一方试图修改时都能通知操作系统
+
+但是这样就不能区分原本内存空间的读写态了，不过在虚拟内存控制块中仍然保留了原始的状态位，使用线性地址找到相应的虚拟内存页控制块，对比其跟页表项的状态位就能判断修改请求是否合法，若该请求合法就申请一块新的内存空间将原先内容拷贝过去，修改要写该空间的进程的页表指向新的内存空间，这样就完成了写时复制，而对进程本身这是不可见的
+
+这里还涉及到共享分页对多个线程的数据一致性问题，“Copy on Write”机制本质上是进程共享，需要有足够的数据结构支持多个进程共享内存页，比如说在共享页被换入换出时，所有的关联进程的页表都需要修改，这是虚拟内存管理实现的完整性问题
 
 ### 练习3：阅读分析源代码，理解进程执行 fork/exec/wait/exit 的实现，以及系统调用的实现
 
