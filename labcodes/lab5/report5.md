@@ -209,7 +209,178 @@ proc->cptr = proc->yptr = proc->optr = NULL;
 
 #### exec的实现
 
+`syscall()`函数调用`sys_exec()`函数进行加载新应用程序
 
+```c
+static int
+sys_exec(uint32_t arg[]) {
+    const char *name = (const char *)arg[0];
+    size_t len = (size_t)arg[1];
+    unsigned char *binary = (unsigned char *)arg[2];
+    size_t size = (size_t)arg[3];
+    return do_execve(name, len, binary, size);
+}
+```
+
+其功能是从传入参数获取进程名和ELF文件的内存地址传参调用`do_execve()`函数，接下来该函数按照上面练习1中的介绍加载应用程序
+
+#### wait的实现
+
+`syscall()`函数调用`sys_wait()`函数使父进程等待子进程退出，并回收该子进程的进程控制块资源，主要是获取`pid`和子进程退出码的地址，传参调用`do_wait()`函数
+
+```c
+static int
+sys_wait(uint32_t arg[]) {
+    int pid = (int)arg[0];
+    int *store = (int *)arg[1];
+    return do_wait(pid, store);
+}
+```
+
+下面是`do_wait()`函数的具体实现
+
+```c
+int
+do_wait(int pid, int *code_store) {
+    struct mm_struct *mm = current->mm;
+    if (code_store != NULL) {
+        if (!user_mem_check(mm, (uintptr_t)code_store, sizeof(int), 1)) {
+            return -E_INVAL;
+        }
+    }
+
+    struct proc_struct *proc;
+    bool intr_flag, haskid;
+repeat:
+    haskid = 0;
+    if (pid != 0) {
+        proc = find_proc(pid);
+        if (proc != NULL && proc->parent == current) {
+            haskid = 1;
+            if (proc->state == PROC_ZOMBIE) {
+                goto found;
+            }
+        }
+    }
+    else {
+        proc = current->cptr;
+        for (; proc != NULL; proc = proc->optr) {
+            haskid = 1;
+            if (proc->state == PROC_ZOMBIE) {
+                goto found;
+            }
+        }
+    }
+    if (haskid) {
+        current->state = PROC_SLEEPING;
+        current->wait_state = WT_CHILD;
+        schedule();
+        if (current->flags & PF_EXITING) {
+            do_exit(-E_KILLED);
+        }
+        goto repeat;
+    }
+    return -E_BAD_PROC;
+
+found:
+    if (proc == idleproc || proc == initproc) {
+        panic("wait idleproc or initproc.\n");
+    }
+    if (code_store != NULL) {
+        *code_store = proc->exit_code;
+    }
+    local_intr_save(intr_flag);
+    {
+        unhash_proc(proc);
+        remove_links(proc);
+    }
+    local_intr_restore(intr_flag);
+    put_kstack(proc);
+    kfree(proc);
+    return 0;
+}
+```
+
+首先检查传入的子进程返回地址`code_store`是否合法，然后使用传入的`pid`找到要等待的子进程的进程控制块，若传入`pid`为0则选取父进程的子进程列表中的第一个，若能取到子进程，将父进程设置为`PROC_SLEEPING`和`WT_CHILD`状态表示其等待子进程，然后调用`schedule()`函数执行进程调度让出父进程CPU
+
+当子进程退出后唤醒父进程，重新取到子进程的控制块，确认子进程为`PROC_ZOMBIE`状态后，首先将子进程返回码复制到传入地址中，然后回收子进程的进程控制块和内核栈资源，子进程完全结束，之后返回到系统调用点
+
+#### exit的实现
+
+`syscall()`函数调用`sys_exit()`函数使当前进程退出，其功能是从参数中取到错误码传参调用`do_exit()`函数
+
+```c
+static int
+sys_exit(uint32_t arg[]) {
+    int error_code = (int)arg[0];
+    return do_exit(error_code);
+}
+```
+
+下面是`do_exit()`函数的实现
+
+```c
+int
+do_exit(int error_code) {
+    if (current == idleproc) {
+        panic("idleproc exit.\n");
+    }
+    if (current == initproc) {
+        panic("initproc exit.\n");
+    }
+    
+    struct mm_struct *mm = current->mm;
+    if (mm != NULL) {
+        lcr3(boot_cr3);
+        if (mm_count_dec(mm) == 0) {
+            exit_mmap(mm);
+            put_pgdir(mm);
+            mm_destroy(mm);
+        }
+        current->mm = NULL;
+    }
+    current->state = PROC_ZOMBIE;
+    current->exit_code = error_code;
+    
+    bool intr_flag;
+    struct proc_struct *proc;
+    local_intr_save(intr_flag);
+    {
+        proc = current->parent;
+        if (proc->wait_state == WT_CHILD) {
+            wakeup_proc(proc);
+        }
+        while (current->cptr != NULL) {
+            proc = current->cptr;
+            current->cptr = proc->optr;
+    
+            proc->yptr = NULL;
+            if ((proc->optr = initproc->cptr) != NULL) {
+                initproc->cptr->yptr = proc;
+            }
+            proc->parent = initproc;
+            initproc->cptr = proc;
+            if (proc->state == PROC_ZOMBIE) {
+                if (initproc->wait_state == WT_CHILD) {
+                    wakeup_proc(initproc);
+                }
+            }
+        }
+    }
+    local_intr_restore(intr_flag);
+    
+    schedule();
+    panic("do_exit will not return!! %d.\n", current->pid);
+}
+```
+
+首先获取当前进程的内存控制块，只有用户进程才能取到内存控制块，将cr3寄存器加载为内核页目录，然后回收当前进程的内存空间、页表和内存控制块，然后设置当前进程的状态为`PROC_ZOMBIE`并设置返回码，子进程退出等待父进程回收进程控制块
+
+再找到父进程控制块，若其处于`WT_CHILD`状态，那么调用`wakeup_proc()`函数唤醒父进程使其等待被调度后回收子进程的剩余资源
+
+若子进程还存在子进程，需要将其父进程设置为`initproc`进程，若该进程也处于退出状态，唤醒`initproc`进程让其完成资源回收
+
+到此进程退出设置完成，最后调用`schedule()`函数调度进程
 
 ---
 
@@ -218,10 +389,20 @@ proc->cptr = proc->yptr = proc->optr = NULL;
 - **请分析fork/exec/wait/exit在实现中是如何影响进程的执行状态的？**
 - **请给出ucore中一个用户态进程的执行状态生命周期图**
 
+fork和exec都会创建进程，进程经由初始态进入可运行状态；wait将阻塞父进程，父进程被设置为等待状态；exit回收进程的大部分资源，进程转入退出态，并且唤醒父进程使父进程转回可运行态，等待父进程完成最后的资源回收，进程结束
 
+下面是用户态进程的状态周期图：
+
+```text
+PROC_UNINIT --> PROC_RUNNABLE --> PROC_ZOMBIE --> exit
+                  ^      |
+                  |      V
+                PROC_SLEEPING
+```
 
 ### 实验结果
 
+在当前目录下运行**make grade**可得到各用户程序的测试结果，该实验能够通过测试
 
 ## 实验总结和对比
 
