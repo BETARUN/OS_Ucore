@@ -137,6 +137,23 @@ struct sched_class {
 
 各个可运行进程通过进程队列组织起来，在上面的调度器框架中定义了对这个队列的插入、删除和取节点操作，对于不同的调度器来说对该队列的操作也有不同，因此这些函数通过函数指针定义成为接口供各个不同调度器实现，最后在该框架内还有一个`proc_tick()`函数用于处理时钟中断，以实现进程抢占式调度
 
+在这里`RR_enqueue()`函数需要特别注意
+
+```c
+static void
+RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+    assert(list_empty(&(proc->run_link)));
+    list_add_before(&(rq->run_list), &(proc->run_link));
+    if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+        proc->time_slice = rq->max_time_slice;
+    }
+    proc->rq = rq;
+    rq->proc_num ++;
+}
+```
+
+在这里会看到对于剩余时间片已为0或大于队列上限的进程，需要重置该进程的剩余时间片为队列上限，这样的操作可以让时间片用完而被抢占的进程在入队后重新获取时间片，而由于I/O或主动让出CPU的进程在入队时是不会改变剩余时间片的数值的
+
 #### 简要说明如何设计实现“多级反馈队列调度算法”
 
 在上面的RR调度器算法中是按照完全的FIFO队列进行处理的，各个进程的时间片也是相同的，在这里可以通过给不同进程设置不同的时间片长度并调整各个进程在队列中的位置来实现多级反馈队列调度算法

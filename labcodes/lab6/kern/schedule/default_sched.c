@@ -159,13 +159,30 @@ stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static struct proc_struct *
 stride_pick_next(struct run_queue *rq) {
-     /* LAB6: YOUR CODE 
+     /* LAB6: 17343025 
       * (1) get a  proc_struct pointer p  with the minimum value of stride
              (1.1) If using skew_heap, we can use le2proc get the p from rq->lab6_run_poll
              (1.2) If using list, we have to search list to find the p with minimum stride value
       * (2) update p;s stride value: p->lab6_stride
       * (3) return p
       */
+     #if USE_SKEW_HEAP
+          skew_heap_entry_t* he = rq->lab6_run_pool;
+          struct proc_struct* proc = le2proc(rq->lab6_run_pool, lab6_run_pool);
+     #else
+          list_entry_t *le = list_next(&(rq->run_list));
+          while (le != rq->run_list) {
+
+          }
+          struct proc_struct* proc = 
+     #endif
+     proc->lab6_stride += proc->lab6_priority;
+     return proc;
+     list_entry_t *le = list_next(&(rq->run_list));
+     if (le != &(rq->run_list)) {
+          return le2proc(le, run_link);
+     }
+     return NULL;
 }
 
 /*
@@ -178,7 +195,11 @@ stride_pick_next(struct run_queue *rq) {
  */
 static void
 stride_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
-     /* LAB6: YOUR CODE */
+     /* LAB6: 17343025 */
+     if (proc->time_slice > 0)
+          proc->time_slice--;
+     if (proc->time_slice == 0)
+          proc->need_resched = 1;
 }
 
 struct sched_class default_sched_class = {
