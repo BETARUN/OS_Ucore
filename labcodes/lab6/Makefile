@@ -306,6 +306,12 @@ run-nox-%: build-%
 build-%: touch
 	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=$* -DTESTSTART=$(RUN_PREFIX)$*_out_start -DTESTSIZE=$(RUN_PREFIX)$*_out_size"
 
+my-qemu-%: build-%
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
+
+my-debug-%: build-%
+	$(V)gdb -q -x tools/gdbinit
+
 .PHONY: grade touch
 
 GRADE_GDB_IN	:= .gdb.in

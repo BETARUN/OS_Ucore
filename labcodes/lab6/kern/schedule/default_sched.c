@@ -1,60 +1,60 @@
-// #include <defs.h>
-// #include <list.h>
-// #include <proc.h>
-// #include <assert.h>
-// #include <default_sched.h>
+// // #include <defs.h>
+// // #include <list.h>
+// // #include <proc.h>
+// // #include <assert.h>
+// // #include <default_sched.h>
 
-// static void
-// RR_init(struct run_queue *rq) {
-//     list_init(&(rq->run_list));
-//     rq->proc_num = 0;
-// }
+// // static void
+// // RR_init(struct run_queue *rq) {
+// //     list_init(&(rq->run_list));
+// //     rq->proc_num = 0;
+// // }
 
-// static void
-// RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
-//     assert(list_empty(&(proc->run_link)));
-//     list_add_before(&(rq->run_list), &(proc->run_link));
-//     if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
-//         proc->time_slice = rq->max_time_slice;
-//     }
-//     proc->rq = rq;
-//     rq->proc_num ++;
-// }
+// // static void
+// // RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+// //     assert(list_empty(&(proc->run_link)));
+// //     list_add_before(&(rq->run_list), &(proc->run_link));
+// //     if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+// //         proc->time_slice = rq->max_time_slice;
+// //     }
+// //     proc->rq = rq;
+// //     rq->proc_num ++;
+// // }
 
-// static void
-// RR_dequeue(struct run_queue *rq, struct proc_struct *proc) {
-//     assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
-//     list_del_init(&(proc->run_link));
-//     rq->proc_num --;
-// }
+// // static void
+// // RR_dequeue(struct run_queue *rq, struct proc_struct *proc) {
+// //     assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
+// //     list_del_init(&(proc->run_link));
+// //     rq->proc_num --;
+// // }
 
-// static struct proc_struct *
-// RR_pick_next(struct run_queue *rq) {
-//     list_entry_t *le = list_next(&(rq->run_list));
-//     if (le != &(rq->run_list)) {
-//         return le2proc(le, run_link);
-//     }
-//     return NULL;
-// }
+// // static struct proc_struct *
+// // RR_pick_next(struct run_queue *rq) {
+// //     list_entry_t *le = list_next(&(rq->run_list));
+// //     if (le != &(rq->run_list)) {
+// //         return le2proc(le, run_link);
+// //     }
+// //     return NULL;
+// // }
 
-// static void
-// RR_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
-//     if (proc->time_slice > 0) {
-//         proc->time_slice --;
-//     }
-//     if (proc->time_slice == 0) {
-//         proc->need_resched = 1;
-//     }
-// }
+// // static void
+// // RR_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
+// //     if (proc->time_slice > 0) {
+// //         proc->time_slice --;
+// //     }
+// //     if (proc->time_slice == 0) {
+// //         proc->need_resched = 1;
+// //     }
+// // }
 
-// struct sched_class default_sched_class = {
-//     .name = "RR_scheduler",
-//     .init = RR_init,
-//     .enqueue = RR_enqueue,
-//     .dequeue = RR_dequeue,
-//     .pick_next = RR_pick_next,
-//     .proc_tick = RR_proc_tick,
-// };
+// // struct sched_class default_sched_class = {
+// //     .name = "RR_scheduler",
+// //     .init = RR_init,
+// //     .enqueue = RR_enqueue,
+// //     .dequeue = RR_dequeue,
+// //     .pick_next = RR_pick_next,
+// //     .proc_tick = RR_proc_tick,
+// // };
 
 #include <defs.h>
 #include <list.h>
@@ -65,8 +65,8 @@
 #define USE_SKEW_HEAP 1
 
 /* You should define the BigStride constant here*/
-/* LAB6: YOUR CODE */
-#define BIG_STRIDE    /* you should give a value, and is ??? */
+/* LAB6: 17343025 */
+#define BIG_STRIDE 2147483647  /* you should give a value, and is ??? */
 
 /* The compare function for two skew_heap_node_t's and the
  * corresponding procs*/
@@ -94,11 +94,14 @@ proc_stride_comp_f(void *a, void *b)
  */
 static void
 stride_init(struct run_queue *rq) {
-     /* LAB6: YOUR CODE 
+     /* LAB6: 17343025 
       * (1) init the ready process list: rq->run_list
       * (2) init the run pool: rq->lab6_run_pool
       * (3) set number of process: rq->proc_num to 0       
       */
+     list_init(&rq->run_list);
+     rq->lab6_run_pool = NULL;
+     rq->proc_num = 0;
 }
 
 /*
@@ -116,7 +119,7 @@ stride_init(struct run_queue *rq) {
  */
 static void
 stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
-     /* LAB6: YOUR CODE 
+     /* LAB6: 17343025 
       * (1) insert the proc into rq correctly
       * NOTICE: you can use skew_heap or list. Important functions
       *         skew_heap_insert: insert a entry into skew_heap
@@ -125,6 +128,13 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
       * (3) set proc->rq pointer to rq
       * (4) increase rq->proc_num
       */
+     rq->lab6_run_pool = 
+          skew_heap_insert(rq->lab6_run_pool, &proc->lab6_run_pool, proc_stride_comp_f);
+    if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+        proc->time_slice = rq->max_time_slice;
+    }
+     proc->rq = rq;
+     rq->proc_num++;
 }
 
 /*
@@ -137,12 +147,15 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static void
 stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
-     /* LAB6: YOUR CODE 
+     /* LAB6: 17343025 
       * (1) remove the proc from rq correctly
       * NOTICE: you can use skew_heap or list. Important functions
       *         skew_heap_remove: remove a entry from skew_heap
       *         list_del_init: remove a entry from the  list
       */
+     rq->lab6_run_pool = 
+          skew_heap_remove(rq->lab6_run_pool, &proc->lab6_run_pool, proc_stride_comp_f);
+     rq->proc_num--;
 }
 /*
  * stride_pick_next pick the element from the ``run-queue'', with the
@@ -166,23 +179,17 @@ stride_pick_next(struct run_queue *rq) {
       * (2) update p;s stride value: p->lab6_stride
       * (3) return p
       */
-     #if USE_SKEW_HEAP
-          skew_heap_entry_t* he = rq->lab6_run_pool;
-          struct proc_struct* proc = le2proc(rq->lab6_run_pool, lab6_run_pool);
-     #else
-          list_entry_t *le = list_next(&(rq->run_list));
-          while (le != rq->run_list) {
-
-          }
-          struct proc_struct* proc = 
-     #endif
-     proc->lab6_stride += proc->lab6_priority;
+     skew_heap_entry_t* he = rq->lab6_run_pool;
+     if (he == NULL)
+          return NULL;
+     struct proc_struct* proc = le2proc(he, lab6_run_pool);
+     uint32_t step;
+     if (proc->lab6_priority == 0)
+          step = BIG_STRIDE;
+     else
+          step = BIG_STRIDE / proc->lab6_priority;
+     proc->lab6_stride += step;
      return proc;
-     list_entry_t *le = list_next(&(rq->run_list));
-     if (le != &(rq->run_list)) {
-          return le2proc(le, run_link);
-     }
-     return NULL;
 }
 
 /*
