@@ -41,6 +41,24 @@ sched_init(void) {
 
 该函数主要是初始化调度器框架`sched_class`和进程队列`rq`，此时RR调度器被引入框架中，并设置进程队列的最大时间片长度
 
+为了实现进程队列和时间片控制，需要修改`proc_struct`结构体，在其中新增以下成员
+
+```c
+struct run_queue *rq;                       // running queue contains Process
+list_entry_t run_link;                      // the entry linked in run queue
+int time_slice;                             // time slice for occupying the CPU
+```
+
+其中`rq`指向进程队列，`run_link`用于将各个进程控制块连接成双向链表，`time_slice`表示当前进程剩余的时间片大小
+
+在创建进程的时候，需要对上述成员变量进行初始化
+
+```c
+proc->rq = NULL;
+list_init(&proc->run_link);
+proc->time_slice = 0;
+```
+
 在每个时钟中断时调用`sched_class_proc_tick()`函数，在RR算法下相关函数定义如下：
 
 ```c
@@ -160,11 +178,91 @@ RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
 
 ### 练习2：实现 Stride Scheduling 调度算法
 
+为了实现这个调度算法，需要再在`proc_struct`结构体中增加成员变量
+
+```c
+skew_heap_entry_t lab6_run_pool;            // FOR LAB6 ONLY: the entry in the run pool
+uint32_t lab6_stride;                       // FOR LAB6 ONLY: the current stride of the process 
+uint32_t lab6_priority;                     // FOR LAB6 ONLY: the priority of process, set by lab6_set_priority(uint32_t)
+```
+
+其中`lab6_run_pool`用于连接各进程控制块形成堆以实现高效的优先队列，`lab6_stride`变量记录了进程的调度权值，在每次进行调度时选择该值最小的进程，`lab6_priority`变量表示该进程的调度优先级，值越大的进程分配的时间越多
+
+这些变量同样需要在进程创建时初始化
+
+```c
+skew_heap_init(&proc->lab6_run_pool);
+proc->lab6_stride = 0;
+proc->lab6_priority = 0;
+```
+
+在每次调度时，进行`lab6_stride += BIG_STRIDE / lab6_priority`运算，这样对于优先级越大的进程其权值的增量就越小，对各个进程的权值作差得到大小关系形成优先队列，取权值最小的作为将要运行的进程
+
+这里会出现`lab6_stride`变量的溢出问题，在这里权值和优先级都是无符号整数，而两者作差时当作有符号整数处理，这样就能通过判断差与0的关系得到大小关系，要使溢出后结果正负号不变，权值的增量必须有一个上限，由于优先级大于或等于1，该上限即为`BIG_STRIDE`，经过计算该上限是权值和优先级的当前位数所能表示的最大整数，在这里是32位的整数，故`BIG_STRIDE`可取2147483647
+
+接下来需要按照新的调度算法实现调度器框架中的各个函数
+
+首先是`stride_proc_tick()`函数，与RR算法的`proc_tick()`函数内容完全一致，都是在响应时钟中断时减少当前进程时间片直到为0触发调度
+
+然后是`stride_init()`函数，该函数初始化进程队列，只需要赋零值即可
+
+```c
+static void
+stride_init(struct run_queue *rq) {
+     list_init(&rq->run_list);
+     rq->lab6_run_pool = NULL;
+     rq->proc_num = 0;
+}
+```
+
+接着是`stride_enqueue()`函数，这个函数将进程添加到进程优先队列中，对于时间片归零而被抢占调度的进程来说需要重置时间片大小
+
+```c
+static void
+stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+     rq->lab6_run_pool = 
+          skew_heap_insert(rq->lab6_run_pool, &proc->lab6_run_pool, proc_stride_comp_f);
+    if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+        proc->time_slice = rq->max_time_slice;
+    }
+     proc->rq = rq;
+     rq->proc_num++;
+}
+```
+
+然后是`stride_dequeue()`函数，这个函数将移除队头元素，用于将离开可运行状态的进程移出等待队列
+
+```c
+static void
+stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
+     rq->lab6_run_pool = 
+          skew_heap_remove(rq->lab6_run_pool, &proc->lab6_run_pool, proc_stride_comp_f);
+     rq->proc_num--;
+}
+```
+
+最后是`stride_pick_next()`函数，用于取队头的进程查看，若当前队列中没有进程需要返回`NULL`，否则取到该进程并增加该进程的权值，注意在刚初始化完毕时该进程的优先级被设置为0，需要单独处理以避免除零错误
+
+```c
+static struct proc_struct *
+stride_pick_next(struct run_queue *rq) {
+     skew_heap_entry_t* he = rq->lab6_run_pool;
+     if (he == NULL)
+          return NULL;
+     struct proc_struct* proc = le2proc(he, lab6_run_pool);
+     uint32_t step;
+     if (proc->lab6_priority == 0)
+          step = BIG_STRIDE;
+     else
+          step = BIG_STRIDE / proc->lab6_priority;
+     proc->lab6_stride += step;
+     return proc;
+}
+```
+
+至此该调度算法实现完成，使用`make grade`命令检查也能通过测试
 
 ### 练习3：结合中断处理和调度程序，再次理解进程控制块中的trapframe和context在进程切换时作用
-
-
-### 实验结果
 
 
 ## 实验总结和对比
