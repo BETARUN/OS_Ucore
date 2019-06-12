@@ -262,6 +262,61 @@ stride_pick_next(struct run_queue *rq) {
 
 至此该调度算法实现完成，使用`make grade`命令检查也能通过测试
 
+```text
+badsegment:              (2.1s)
+  -check result:                             OK
+  -check output:                             OK
+divzero:                 (1.8s)
+  -check result:                             OK
+  -check output:                             OK
+softint:                 (1.8s)
+  -check result:                             OK
+  -check output:                             OK
+faultread:               (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+faultreadkernel:         (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+hello:                   (1.8s)
+  -check result:                             OK
+  -check output:                             OK
+testbss:                 (1.8s)
+  -check result:                             OK
+  -check output:                             OK
+pgdir:                   (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+yield:                   (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+badarg:                  (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+exit:                    (1.7s)
+  -check result:                             OK
+  -check output:                             OK
+spin:                    (1.9s)
+  -check result:                             OK
+  -check output:                             OK
+waitkill:                (2.2s)
+  -check result:                             OK
+  -check output:                             OK
+forktest:                (1.8s)
+  -check result:                             OK
+  -check output:                             OK
+forktree:                (1.9s)
+  -check result:                             OK
+  -check output:                             OK
+matrix:                  (19.4s)
+  -check result:                             OK
+  -check output:                             OK
+priority:                (11.8s)
+  -check result:                             OK
+  -check output:                             OK
+Total Score: 170/170
+```
+
 ### 练习3：结合中断处理和调度程序，再次理解进程控制块中的trapframe和context在进程切换时作用
 
 对于用户态进程来说，发生进程调度时会产生内核态与用户态之间的切换，这需要通过`trapframe`中断帧保存中断现场信息，在产生中断时寄存器值保存到中断帧中，在切换到将要运行的进程从中断恢复时将寄存器值恢复回该进程被中断前的状态，保证进程切换不影响进程的执行过程
