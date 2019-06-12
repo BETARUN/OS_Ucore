@@ -267,7 +267,7 @@ TARGETS: $(TARGETS)
 
 QEMUOPTS = -hda $(UCOREIMG) -drive file=$(SWAPIMG),media=disk,cache=writeback
 
-.PHONY: qemu qemu-nox debug debug-nox
+.PHONY: qemu qemu-nox debug debug-nox my-qemu my-debug
 qemu-mon: $(UCOREIMG)  $(SWAPIMG)
 	$(V)$(QEMU)  -no-reboot -monitor stdio $(QEMUOPTS) -serial null
 qemu: $(UCOREIMG) $(SWAPIMG)
@@ -288,6 +288,12 @@ debug-nox: $(UCOREIMG) $(SWAPIMG)
 	$(V)sleep 2
 	$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
 
+my-qemu: $(UCOREIMG) $(SWAPIMG)
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
+
+my-debug: $(UCOREIMG) $(SWAPIMG)
+	$(V)gdb -q -x tools/gdbinit
+
 RUN_PREFIX	:= _binary_$(OBJDIR)_$(USER_PREFIX)
 MAKEOPTS	:= --quiet --no-print-directory
 
@@ -299,6 +305,9 @@ run-nox-%: build-%
 
 build-%: touch
 	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=$* -DTESTSTART=$(RUN_PREFIX)$*_out_start -DTESTSIZE=$(RUN_PREFIX)$*_out_size"
+
+my-qemu-%: build-%
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
 
 .PHONY: grade touch
 
