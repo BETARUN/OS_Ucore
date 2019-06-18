@@ -25,7 +25,133 @@
 
 ### 练习1：理解内核级信号量的实现和基于内核级信号量的哲学家就餐问题
 
+在sem.h文件中可以看到信号量的相关定义
 
+```c
+typedef struct {
+    int value;
+    wait_queue_t wait_queue;
+} semaphore_t;
+
+void sem_init(semaphore_t *sem, int value);
+void up(semaphore_t *sem);
+void down(semaphore_t *sem);
+bool try_down(semaphore_t *sem);
+```
+
+可见信号量是一个结构体，其中包含一个整数变量和一个等待队列，在该头文件中还声明了信号量的初始化、P操作和V操作的相关函数
+
+首先来看初始化函数
+
+```c
+void
+sem_init(semaphore_t *sem, int value) {
+    sem->value = value;
+    wait_queue_init(&(sem->wait_queue));
+}
+```
+
+该函数将信号量中的整数变量设定为输入值，并初始化等待队列，可以说是非常简单
+
+---
+
+现在来看P操作的相关函数，这里分为不强制进入临界区的`try_down()`函数以及等待进入临界区的`down()`函数
+
+首先来看`try_down()`函数
+
+```c
+bool
+try_down(semaphore_t *sem) {
+    bool intr_flag, ret = 0;
+    local_intr_save(intr_flag);
+    if (sem->value > 0) {
+        sem->value --, ret = 1;
+    }
+    local_intr_restore(intr_flag);
+    return ret;
+}
+```
+
+该函数关中断后判断信号量中的`value`是否大于零，若是则表示资源可以使用，减少`value`值表示使用了资源，设置返回值为1，否则返回值为0，然后开中断返回，使用这个函数时需要使用者根据返回值自行决定是否可以进入临界区
+
+接下来看`down()`函数
+
+```c
+void
+down(semaphore_t *sem) {
+    uint32_t flags = __down(sem, WT_KSEM);
+    assert(flags == 0);
+}
+
+static __noinline uint32_t __down(semaphore_t *sem, uint32_t wait_state) {
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    if (sem->value > 0) {
+        sem->value --;
+        local_intr_restore(intr_flag);
+        return 0;
+    }
+    wait_t __wait, *wait = &__wait;
+    wait_current_set(&(sem->wait_queue), wait, wait_state);
+    local_intr_restore(intr_flag);
+
+    schedule();
+
+    local_intr_save(intr_flag);
+    wait_current_del(&(sem->wait_queue), wait);
+    local_intr_restore(intr_flag);
+
+    if (wait->wakeup_flags != wait_state) {
+        return wait->wakeup_flags;
+    }
+    return 0;
+}
+
+void
+wait_current_set(wait_queue_t *queue, wait_t *wait, uint32_t wait_state) {
+    assert(current != NULL);
+    wait_init(wait, current);
+    current->state = PROC_SLEEPING;
+    current->wait_state = wait_state;
+    wait_queue_add(queue, wait);
+}
+
+```
+
+调用函数后首先关中断，判断`value`是否大于零，若是表示资源可用，开中断返回，否则在当前进程下创建一个`wait_t`结构，将其加入到信号量的等待队列中，设置当前进程的运行状态为阻塞状态，然后开中断并调用`schedule()`函数进行进程调度，在进程被阻塞期间`wait_t`局部变量一直有效，进而使信号量的队列能正常工作，当该进程被唤醒后在关中断状态下从队列中删除当前进程，然后按情况返回相应的值
+
+---
+
+现在看进行V操作的`up()`函数
+
+```c
+void
+up(semaphore_t *sem) {
+    __up(sem, WT_KSEM);
+}
+
+static __noinline void __up(semaphore_t *sem, uint32_t wait_state) {
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        wait_t *wait;
+        if ((wait = wait_queue_first(&(sem->wait_queue))) == NULL) {
+            sem->value ++;
+        }
+        else {
+            assert(wait->proc->wait_state == wait_state);
+            wakeup_wait(&(sem->wait_queue), wait, wait_state, 1);
+        }
+    }
+    local_intr_restore(intr_flag);
+}
+```
+
+同样需要关中断保证原子性，使用`wait_queue_fist()`函数获取队头的`wait_t`，若不存在则增加`value`值，否则表明有进程在等待，使用`waitup_wait()`函数唤醒与该`wait_t`结构关联的进程，然后开中断并返回
+
+---
+
+至此信号量的初始化、P操作和V操作都实现完成，按照一般的同步互斥问题中信号量的使用方法来使用即可
 
 ## 实验总结和对比
 
