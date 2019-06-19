@@ -25,6 +25,8 @@
 
 ### 练习1：理解内核级信号量的实现和基于内核级信号量的哲学家就餐问题
 
+#### 内核信号量的实现
+
 在sem.h文件中可以看到信号量的相关定义
 
 ```c
@@ -153,20 +155,104 @@ static __noinline void __up(semaphore_t *sem, uint32_t wait_state) {
 
 至此信号量的初始化、P操作和V操作都实现完成，按照一般的同步互斥问题中信号量的使用方法来使用即可
 
+#### 基于信号量的哲学家就餐问题
+
+在check_sync.c文件中有通过信号量实现的哲学家就餐问题
+
+对每一位哲学家有
+
+```c
+int philosopher_using_semaphore(void * arg) /* i：哲学家号码，从0到N-1 */
+{
+    int i, iter=0;
+    i=(int)arg;
+    cprintf("I am No.%d philosopher_sema\n",i);
+    while(iter++<TIMES)
+    { /* 无限循环 */
+        cprintf("Iter %d, No.%d philosopher_sema is thinking\n",iter,i); /* 哲学家正在思考 */
+        do_sleep(SLEEP_TIME);
+        phi_take_forks_sema(i); 
+        /* 需要两只叉子，或者阻塞 */
+        cprintf("Iter %d, No.%d philosopher_sema is eating\n",iter,i); /* 进餐 */
+        do_sleep(SLEEP_TIME);
+        phi_put_forks_sema(i); 
+        /* 把两把叉子同时放回桌子 */
+    }
+    cprintf("No.%d philosopher_sema quit\n",i);
+    return 0;    
+}
+```
+
+在无限循环中，每一位哲学家在每一轮循环都思考一段时间，尝试获取两只叉子，阻塞在获取叉子状态直到得到两只叉子，然后用一段时间进食，最后放回两只叉子，此处用`do_sleep()`函数主动睡眠线程
+
+拿叉子的过程涉及到`phi_take_forks_sema()`函数
+
+```c
+void phi_take_forks_sema(int i) /* i：哲学家号码从0到N-1 */
+{ 
+        down(&mutex); /* 进入临界区 */
+        state_sema[i]=HUNGRY; /* 记录下哲学家i饥饿的事实 */
+        phi_test_sema(i); /* 试图得到两只叉子 */
+        up(&mutex); /* 离开临界区 */
+        down(&s[i]); /* 如果得不到叉子就阻塞 */
+}
+```
+
+通过互斥信号量修改哲学家i的状态为饥饿状态，然后使用`phi_test_sema()`函数试图得到两只叉子，该函数如下
+
+```c
+void phi_test_sema(i) /* i：哲学家号码从0到N-1 */
+{ 
+    if(state_sema[i]==HUNGRY&&state_sema[LEFT]!=EATING
+            &&state_sema[RIGHT]!=EATING)
+    {
+        state_sema[i]=EATING;
+        up(&s[i]);
+    }
+}
+```
+
+只有在当前哲学家饥饿且左右哲学家都不在吃东西时，当前哲学家可用拿到叉子吃东西，修改状态为进餐状态，对当前哲学家的信号量执行V操作
+
+回到`phi_take_forks_sema()`函数，再对当前哲学家的信号量执行P操作，如果之前已经拿到叉子，此处会继续执行，否则当前哲学家就会被阻塞
+
+---
+
+哲学家就餐完毕后调用`phi_put_forks_sema()`函数放下叉子
+
+```c
+void phi_put_forks_sema(int i) /* i：哲学家号码从0到N-1 */
+{ 
+        down(&mutex); /* 进入临界区 */
+        state_sema[i]=THINKING; /* 哲学家进餐结束 */
+        phi_test_sema(LEFT); /* 看一下左邻居现在是否能进餐 */
+        phi_test_sema(RIGHT); /* 看一下右邻居现在是否能进餐 */
+        up(&mutex); /* 离开临界区 */
+}
+```
+
+首先通过互斥信号量修改当前哲学家的状态为正在思考，然后调用`phi_test_sema()`函数检查左右的哲学家的状态，结合该函数的内容可知，若相邻哲学家被阻塞，此时可能会满足可以获得两只叉子的情况，于是会修改对应哲学家的状态为就餐状态，并使用V过程唤醒该哲学家
+
+#### 用户态信号量的实现方案
+
+在内核信号量的实现中使用了关中断和一些内核函数，这些操作在用户态程序中是无法实现的，对于用户态程序，操作系统可以将上述的几个信号量函数封装成为系统调用供用户态程序使用
+
 ## 实验总结和对比
-
-### 对比答案说明差异
-
 
 ### 本实验中重要的知识点
 
-
+- 内核信号量的实现
+- 使用信号量解决哲学家就餐问题
 
 ### OS原理中很重要但实验中没有对应的知识点
 
+在老师的实验要求里面是没有管程的，这个在OS原理中很重要
 
 ### 总结
 
+这次实验主要探讨了同步互斥问题，关于信号量，在操作系统原理中也提到过其结构，可以推测出实现方法，在实验中则是给出了一个具体的实现方法，其中重点在于信号量的P操作和V操作的实现，其中涉及到等待队列和线程调度的综合应用，了解其实现内容能让我对操作系统的原理有更加深刻的了解
+
+本次实验的另一个内容是理解根据信号量实现的哲学家就餐问题，这个问题是同步互斥问题中的一个经典问题，在之前的学习中只是提到过而没有更加深入了解，在本次实验中可以了解其实现细节，让我对同步互斥问题有更多认识
 
 ## 参考文献
 
