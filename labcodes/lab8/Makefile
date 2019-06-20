@@ -314,7 +314,7 @@ TARGETS: $(TARGETS)
 
 QEMUOPTS = -hda $(UCOREIMG) -drive file=$(SWAPIMG),media=disk,cache=writeback -drive file=$(SFSIMG),media=disk,cache=writeback 
 
-.PHONY: qemu qemu-nox debug debug-nox monitor
+.PHONY: qemu qemu-nox debug debug-nox monitor my-qemu my-debug
 qemu-mon: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU)  -no-reboot -monitor stdio $(QEMUOPTS) -serial null
 qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
@@ -355,6 +355,12 @@ build-%: touch
 
 script-%: touch
 	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=sh -DTESTSCRIPT=/script/$*"
+
+my-qemu-%: build-%
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
+
+my-debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)gdb -q -x tools/gdbinit
 
 .PHONY: grade touch buildfs
 
