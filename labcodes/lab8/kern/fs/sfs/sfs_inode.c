@@ -600,8 +600,8 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
     uint32_t count = nblks + 1;
-    blkoff = offset;
-    if (blkoff % SFS_BLKSIZE != 0) {
+    blkoff = offset % SFS_BLKSIZE;
+    if (blkoff != 0) {
         sfs_bmap_load_nolock(sfs, sin, blkno, &ino);
         size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
         sfs_buf_op(sfs, buf, size, ino, blkoff);
@@ -613,14 +613,14 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
         sfs_bmap_load_nolock(sfs, sin, blkno, &ino);
         count--;
         if (count > 0) {
-            sfs_block_op(sfs, buf + alen, ino, count);
+            sfs_block_op(sfs, (void*)((size_t)buf + alen), ino, count);
             alen += count * SFS_BLKSIZE;
         }
 
         blkno = endpos / SFS_BLKSIZE;
         sfs_bmap_load_nolock(sfs, sin, blkno, &ino);
         size = endpos % SFS_BLKSIZE;
-        sfs_buf_op(sfs, buf + alen, size, ino, 0);
+        sfs_buf_op(sfs, (void*)((size_t)buf + alen), size, ino, 0);
         alen += size;
     }
 

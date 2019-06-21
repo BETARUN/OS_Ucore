@@ -717,11 +717,28 @@ load_icode(int fd, int argc, char **kargv) {
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-2*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-3*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
+    char *uargv[EXEC_MAX_ARG_NUM];
+    memset(uargv, 0, sizeof(uargv));
+    page = get_page(mm->pgdir, USTACKTOP - USTACKSIZE, NULL);
     uint32_t esp = USTACKTOP;
-    esp -= sizeof(kargv);
-    memcpy((void*)esp, (void*)&kargv, sizeof(kargv));
+    for (int i = 0; i < argc; ++i) {
+        int len = strlen(kargv[i]) + 1;
+        esp -= len;
+        page = get_page(mm->pgdir, esp, NULL);
+        memcpy(page2kva(page) + (esp - ROUNDDOWN(esp, PGSIZE)), kargv[i], len);
+        uargv[i] = esp;
+    }
+    esp -= sizeof(uargv);
+    page = get_page(mm->pgdir, esp, NULL);
+    memcpy(page2kva(page) + (esp - ROUNDDOWN(esp, PGSIZE)), uargv, sizeof(uargv));
     esp -= sizeof(argc);
-    memcpy((void*)esp, (void*)&argc, sizeof(argc));
+    page = get_page(mm->pgdir, esp, NULL);
+    memcpy(page2kva(page) + (esp - ROUNDDOWN(esp, PGSIZE)), &argc, sizeof(argc));
+    // esp -= sizeof(kargv);
+    // page = get_page(mm->pgdir, esp, NULL);
+    // memcpy(page2kva(page) + PGSIZE - sizeof(uargv), (void*)&kargv, sizeof(kargv));
+    // esp -= sizeof(argc);
+    // memcpy((void*)esp, (void*)&argc, sizeof(argc));
 
     mm_count_inc(mm);
     current->mm = mm;
