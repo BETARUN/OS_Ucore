@@ -640,7 +640,6 @@ load_icode(int fd, int argc, char **kargv) {
         goto bad_elf_cleanup_pgdir;
     }
     struct proghdr ph;
-    // load_icode_read(fd, (void*)&ph, sizeof(ph), elf.e_phoff);
     uint32_t vm_flags, perm;
     for (uint16_t i = 0; i < elf.e_phnum; ++i) {
         ret = load_icode_read(fd, (void*)&ph, sizeof(ph), elf.e_phoff + i * sizeof(ph));
@@ -734,11 +733,6 @@ load_icode(int fd, int argc, char **kargv) {
     esp -= sizeof(argc);
     page = get_page(mm->pgdir, esp, NULL);
     memcpy(page2kva(page) + (esp - ROUNDDOWN(esp, PGSIZE)), &argc, sizeof(argc));
-    // esp -= sizeof(kargv);
-    // page = get_page(mm->pgdir, esp, NULL);
-    // memcpy(page2kva(page) + PGSIZE - sizeof(uargv), (void*)&kargv, sizeof(kargv));
-    // esp -= sizeof(argc);
-    // memcpy((void*)esp, (void*)&argc, sizeof(argc));
 
     mm_count_inc(mm);
     current->mm = mm;
@@ -753,102 +747,6 @@ load_icode(int fd, int argc, char **kargv) {
     tf->tf_eip = elf.e_entry;
     tf->tf_eflags = FL_IF;
     return 0;
-
-    // for (struct proghdr* ptr = &ph; ptr < &ph + elf.e_phnum; ptr++) {
-    //     if (ptr->p_type != ELF_PT_LOAD)
-    //         continue;
-    //     if (ptr->p_filesz > ptr->p_memsz) {
-    //         ret = -E_INVAL_ELF;
-    //         goto bad_cleanup_mmap;
-    //     }
-    //     if (ptr->p_filesz == 0)
-    //         continue ;
-    //     vm_flags = 0, perm = PTE_U;
-    //     if (ptr->p_flags & ELF_PF_X) vm_flags |= VM_EXEC;
-    //     if (ptr->p_flags & ELF_PF_W) vm_flags |= VM_WRITE;
-    //     if (ptr->p_flags & ELF_PF_R) vm_flags |= VM_READ;
-    //     if (vm_flags & VM_WRITE) perm |= PTE_W;
-    //     if ((ret = mm_map(mm, ptr->p_va, ptr->p_memsz, vm_flags, NULL)) != 0) {
-    //         goto bad_cleanup_mmap;
-    //     }
-
-    //     uint32_t from = ptr->p_offset;
-    //     size_t off, size;
-    //     uintptr_t start = ptr->p_va, end, la = ROUNDDOWN(start, PGSIZE);
-
-    //     ret = -E_NO_MEM;
-    //     end = ptr->p_va + ptr->p_filesz;
-    //     while (start < end) {
-    //         if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
-    //             goto bad_cleanup_mmap;
-    //         }
-    //         off = start - la, size = PGSIZE - off, la += PGSIZE;
-    //         if (end < la) {
-    //             size -= la - end;
-    //         }
-    //         void* seg = kmalloc(size);
-    //         load_icode_read(fd, seg, size, from);
-    //         memcpy(page2kva(page) + off, from, size);
-    //         start += size, from += size;
-    //         kfree(seg);
-    //     }
-
-    //     end = ptr->p_va + ptr->p_memsz;
-    //     if (start < la) {
-    //         /* ph->p_memsz == ph->p_filesz */
-    //         if (start == end) {
-    //             continue ;
-    //         }
-    //         off = start + PGSIZE - la, size = PGSIZE - off;
-    //         if (end < la) {
-    //             size -= la - end;
-    //         }
-    //         memset(page2kva(page) + off, 0, size);
-    //         start += size;
-    //         assert((end < la && start == end) || (end >= la && start == la));
-    //     }
-    //     while (start < end) {
-    //         if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
-    //             goto bad_cleanup_mmap;
-    //         }
-    //         off = start - la, size = PGSIZE - off, la += PGSIZE;
-    //         if (end < la) {
-    //             size -= la - end;
-    //         }
-    //         memset(page2kva(page) + off, 0, size);
-    //         start += size;
-    //     }
-    // }
-
-    // vm_flags = VM_READ | VM_WRITE | VM_STACK;
-    // if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
-    //     goto bad_cleanup_mmap;
-    // }
-    // assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-PGSIZE , PTE_USER) != NULL);
-    // assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-2*PGSIZE , PTE_USER) != NULL);
-    // assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-3*PGSIZE , PTE_USER) != NULL);
-    // assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
-    
-    // //(5) set current process's mm, sr3, and set CR3 reg = physical addr of Page Directory
-    // mm_count_inc(mm);
-    // current->mm = mm;
-    // current->cr3 = PADDR(mm->pgdir);
-    // lcr3(PADDR(mm->pgdir));
-
-    // uint32_t *esp = USTACKTOP;
-    // esp -= sizeof(argc);
-    // memcpy((void*)esp, (void*)&argc, sizeof(argc));
-    // esp -= sizeof(kargv);
-    // memcpy((void*)esp, (void*)&kargv, sizeof(kargv));
-
-    // struct trapframe *tf = current->tf;
-    // memset(tf, 0, sizeof(struct trapframe));
-    // tf->tf_cs = USER_CS;
-    // tf->tf_ds = tf->tf_es = tf->tf_ss = USER_DS;
-    // tf->tf_esp = esp;
-    // tf->tf_eip = elf.e_entry;
-    // tf->tf_eflags = FL_IF;
-    // return 0;
 
 bad_cleanup_mmap:
     exit_mmap(mm);
