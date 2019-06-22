@@ -718,7 +718,6 @@ load_icode(int fd, int argc, char **kargv) {
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
     char *uargv[EXEC_MAX_ARG_NUM];
     memset(uargv, 0, sizeof(uargv));
-    page = get_page(mm->pgdir, USTACKTOP - USTACKSIZE, NULL);
     uint32_t esp = USTACKTOP;
     for (int i = 0; i < argc; ++i) {
         int len = strlen(kargv[i]) + 1;
