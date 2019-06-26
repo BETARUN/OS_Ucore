@@ -11,7 +11,7 @@ static list_entry_t timer_list;
 
 static struct sched_class *sched_class;
 
-static struct run_queue *rq;
+static struct run_queue *rq[6];
 
 static inline void
 sched_class_enqueue(struct proc_struct *proc) {
@@ -40,7 +40,7 @@ sched_class_proc_tick(struct proc_struct *proc) {
     }
 }
 
-static struct run_queue __rq;
+static struct run_queue __rq[6];
 
 void
 sched_init(void) {
@@ -48,8 +48,11 @@ sched_init(void) {
 
     sched_class = &default_sched_class;
 
-    rq = &__rq;
-    rq->max_time_slice = MAX_TIME_SLICE;
+    for (int i = 0; i < 6; ++i)
+        rq[i] = &__rq[i];
+    rq[0]->max_time_slice = MAX_TIME_SLICE;
+    for (int i = 1; i < 6; ++i)
+        rq[i]->max_time_slice = 2 * rq[i - 1]->max_time_slice;
     sched_class->init(rq);
 
     cprintf("sched class: %s\n", sched_class->name);

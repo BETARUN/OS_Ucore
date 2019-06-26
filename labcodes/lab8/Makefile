@@ -356,6 +356,9 @@ build-%: touch
 script-%: touch
 	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=sh -DTESTSCRIPT=/script/$*"
 
+my-qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
+
 my-qemu-%: build-%
 	$(V)$(QEMU) -S -s -nographic -no-reboot $(QEMUOPTS)
 

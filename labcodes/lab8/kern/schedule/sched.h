@@ -36,15 +36,15 @@ struct sched_class {
     // the name of sched_class
     const char *name;
     // Init the run queue
-    void (*init)(struct run_queue *rq);
+    void (*init)(struct run_queue **rq);
     // put the proc into runqueue, and this function must be called with rq_lock
-    void (*enqueue)(struct run_queue *rq, struct proc_struct *proc);
+    void (*enqueue)(struct run_queue **rq, struct proc_struct *proc);
     // get the proc out runqueue, and this function must be called with rq_lock
-    void (*dequeue)(struct run_queue *rq, struct proc_struct *proc);
+    void (*dequeue)(struct run_queue **rq, struct proc_struct *proc);
     // choose the next runnable task
-    struct proc_struct *(*pick_next)(struct run_queue *rq);
+    struct proc_struct *(*pick_next)(struct run_queue **rq);
     // dealer of the time-tick
-    void (*proc_tick)(struct run_queue *rq, struct proc_struct *proc);
+    void (*proc_tick)(struct run_queue **rq, struct proc_struct *proc);
     /* for SMP support in the future
      *  load_balance
      *     void (*load_balance)(struct rq* rq);

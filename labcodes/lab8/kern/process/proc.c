@@ -144,6 +144,7 @@ alloc_proc(void) {
         proc->lab6_stride = 0;
         proc->lab6_priority = 0;
         proc->filesp = files_create();
+        proc->queueIndex = 0;
     }
     return proc;
 }
