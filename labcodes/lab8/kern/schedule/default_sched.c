@@ -246,7 +246,7 @@ static void multi_queue_enqueue(struct run_queue **rq, struct proc_struct *proc)
           int preempt = 0;
           int preemptIndex = 0;
           for (int i = 0; i < currentIndex; ++i) {
-               if (!list_empty(&rq[i]->run_list)) {
+               if (rq[i]->proc_num > 0) {
                     preemptIndex = i;
                     preempt = 1;
                     break;
@@ -276,7 +276,7 @@ static struct proc_struct* multi_queue_pick_next(struct run_queue **rq) {
      int index = 0;
      int hasProc = 0;
      for (int i = 0; i < 6; ++i) {
-          if (!list_empty(&rq[i]->run_list)) {
+          if (rq[i]->proc_num > 0) {
                index = i;
                hasProc = 1;
                break;
@@ -295,10 +295,8 @@ static void multi_queue_proc_tick(struct run_queue **rq, struct proc_struct *pro
      if (proc->time_slice == 0)
           proc->need_resched = 1;
      else {
-          int index = -1;
-          for (int i = 0; i < 6; ++i) {
-               if (!list_empty(&rq[i]->run_list)) {
-                    index = i;
+          for (int i = 0; i < proc->queueIndex; ++i) {
+               if (rq[i]->proc_num > 0) {
                     proc->need_resched = 1;
                     break;
                }
